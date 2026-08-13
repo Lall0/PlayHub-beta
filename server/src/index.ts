@@ -13,7 +13,7 @@ const app = express();
 const httpServer = createServer(app);
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 
-app.use(cors({ origin: CLIENT_URL, credentials: true }));
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -21,7 +21,7 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRouter);
 app.use("/api/admin", adminRouter);
 
-const io = new Server(httpServer, { cors: { origin: CLIENT_URL, credentials: true } });
+const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
 registerLudoSockets(io);
 
 const PORT = process.env.PORT || 4000;
