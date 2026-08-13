@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: playhub-server
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: ./server
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false # preencher depois com a connection string do Supabase/Postgres
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CLIENT_URL
+        sync: false # URL pública do serviço playhub-client, depois de criado
+      - key: PORT
+        value: 4000
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_USERNAME
+        value: lallo
+      - key: ADMIN_PASSWORD
+        sync: false # defina uma senha forte
+
+  - type: web
+    name: playhub-client
+    runtime: docker
+    dockerfilePath: ./client/Dockerfile
+    dockerContext: ./client
+    plan: free
+    envVars:
+      - key: VITE_API_URL
+        sync: false # URL pública do serviço playhub-server, depois de criado

@@ -1,0 +1,94 @@
+// Em desenvolvimento: SQLite. Em produção (Render + Supabase): trocar provider para "postgresql"
+// e DATABASE_URL para a connection string do Supabase. Nada mais precisa mudar.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ONLINE
+  OFFLINE
+  IN_GAME
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  role         Role     @default(USER)
+  status       UserStatus @default(OFFLINE)
+  wins         Int      @default(0)
+  losses       Int      @default(0)
+  gamesPlayed  Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  roomsHosted  Room[]        @relation("HostedRooms")
+  roomPlayers  RoomPlayer[]
+  gameMoves    GameMove[]
+  gamesWon     Game[]        @relation("GameWinner")
+}
+
+model Room {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  gameType   String   @default("LUDO")
+  hostId     String
+  host       User     @relation("HostedRooms", fields: [hostId], references: [id])
+  status     String   @default("WAITING") // WAITING, READY, PLAYING, PAUSED, FINISHED, ABANDONED
+  maxPlayers Int      @default(4)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  players    RoomPlayer[]
+  game       Game?
+}
+
+model RoomPlayer {
+  id          String   @id @default(uuid())
+  roomId      String
+  room        Room     @relation(fields: [roomId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  playerOrder Int
+  color       String? // RED, GREEN, YELLOW, BLUE
+  joinedAt    DateTime @default(now())
+
+  @@unique([roomId, userId])
+}
+
+model Game {
+  id          String    @id @default(uuid())
+  roomId      String    @unique
+  room        Room      @relation(fields: [roomId], references: [id])
+  gameType    String    @default("LUDO")
+  status      String    @default("WAITING") // WAITING, PLAYING, PAUSED, FINISHED
+  currentTurn Int       @default(0)
+  state       String    // JSON serializado do estado do tabuleiro
+  winnerId    String?
+  winner      User?     @relation("GameWinner", fields: [winnerId], references: [id])
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  moves       GameMove[]
+}
+
+model GameMove {
+  id        String   @id @default(uuid())
+  gameId    String
+  game      Game     @relation(fields: [gameId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  moveData  String   // JSON
+  createdAt DateTime @default(now())
+}
