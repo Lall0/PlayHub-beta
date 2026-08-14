@@ -30,3 +30,16 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false # URL pública do serviço playhub-server, depois de criado
+
+# Alternativa mais barata/simples: hospedar o frontend como Static Site em vez de
+# Docker. Se preferir isso, use este bloco no lugar do serviço "playhub-client" acima
+# (o arquivo client/public/_redirects já garante o fallback de SPA nesse modo):
+#
+#  - type: web
+#    name: playhub-client
+#    runtime: static
+#    buildCommand: cd client && npm install && npm run build
+#    staticPublishPath: ./client/dist
+#    envVars:
+#      - key: VITE_API_URL
+#        sync: false

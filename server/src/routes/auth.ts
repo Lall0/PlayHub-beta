@@ -4,6 +4,19 @@ import { hashPassword, verifyPassword, signToken, requireAuth, AuthedRequest } f
 
 export const authRouter = Router();
 
+// Em produção, frontend (Static Site) e backend (Web Service) do Render normalmente
+// ficam em domínios diferentes. Cookies cross-site só são enviados pelo navegador com
+// SameSite=None + Secure. Em dev local (mesma origem/porta diferente em localhost),
+// SameSite=Lax funciona normalmente e não exige HTTPS.
+function cookieOptions() {
+  const isProd = process.env.NODE_ENV === "production";
+  return {
+    httpOnly: true,
+    sameSite: isProd ? ("none" as const) : ("lax" as const),
+    secure: isProd,
+  };
+}
+
 authRouter.post("/register", async (req, res) => {
   const { username, password, confirmPassword } = req.body || {};
   if (!username || typeof username !== "string" || username.length < 3) {
@@ -26,7 +39,7 @@ authRouter.post("/register", async (req, res) => {
     );
     const user = result.rows[0];
     const token = signToken(user.id);
-    res.cookie("token", token, { httpOnly: true, sameSite: "lax" });
+    res.cookie("token", token, cookieOptions());
     res.json({ token, user });
   } catch (err) {
     console.error(err);
@@ -43,7 +56,7 @@ authRouter.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Usuário ou senha inválidos" });
     }
     const token = signToken(user.id);
-    res.cookie("token", token, { httpOnly: true, sameSite: "lax" });
+    res.cookie("token", token, cookieOptions());
     res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
   } catch (err) {
     console.error(err);

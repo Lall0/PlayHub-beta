@@ -6,6 +6,8 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import LudoPage from "./pages/LudoPage";
+import ChessPage from "./pages/ChessPage";
+import CheckersPage from "./pages/CheckersPage";
 import Admin from "./pages/Admin";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -25,8 +27,11 @@ export default function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
             <Route path="/ludo" element={<PrivateRoute><LudoPage /></PrivateRoute>} />
+            <Route path="/xadrez" element={<PrivateRoute><ChessPage /></PrivateRoute>} />
+            <Route path="/dama" element={<PrivateRoute><CheckersPage /></PrivateRoute>} />
             <Route path="/admin" element={<PrivateRoute><Admin /></PrivateRoute>} />
             <Route path="/profile/:username" element={<PrivateRoute><Profile /></PrivateRoute>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </LudoSocketProvider>
       </AuthProvider>

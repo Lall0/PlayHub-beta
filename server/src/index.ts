@@ -6,23 +6,29 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { authRouter } from "./routes/auth";
 import { adminRouter } from "./routes/admin";
+import { gamesRouter } from "./routes/games";
 import { registerLudoSockets } from "./sockets/ludo";
+import { registerChessSockets } from "./sockets/chess";
+import { registerCheckersSockets } from "./sockets/checkers";
 import { ensureSchema } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({ origin: CLIENT_URL, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/games", gamesRouter);
 
-const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
+const io = new Server(httpServer, { cors: { origin: CLIENT_URL, credentials: true } });
 registerLudoSockets(io);
+registerChessSockets(io);
+registerCheckersSockets(io);
 
 const PORT = process.env.PORT || 4000;
 

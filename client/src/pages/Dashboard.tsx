@@ -22,8 +22,8 @@ export default function Dashboard() {
         <h1 className="text-2xl font-semibold text-white mb-8">Olá, {user?.username} 👋</h1>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
-          <GameCard emoji="♟" name="XADREZ" sub="2 jogadores" disabled />
-          <GameCard emoji="◉" name="DAMAS" sub="2 jogadores" disabled />
+          <GameCard emoji="♟" name="XADREZ" sub="2 jogadores" onClick={() => navigate("/xadrez")} />
+          <GameCard emoji="◉" name="DAMAS" sub="2 jogadores" onClick={() => navigate("/dama")} />
           <GameCard emoji="🎲" name="LUDO" sub="2–4 jogadores" onClick={() => navigate("/ludo")} colorful />
         </div>
 

@@ -41,14 +41,24 @@ export default function LudoBoard({ state, myColor, movablePieces, onMovePiece }
   ];
 
   return (
-    <svg viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`} className="w-full h-full max-w-[560px] max-h-[560px] mx-auto select-none">
-      <rect x={0} y={0} width={BOARD_SIZE} height={BOARD_SIZE} fill="#f5f0e6" rx={12} />
+    <svg viewBox={`0 0 ${BOARD_SIZE} ${BOARD_SIZE}`} className="w-full h-full max-w-[560px] max-h-[560px] mx-auto select-none drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+      <defs>
+        <radialGradient id="boardBg" cx="50%" cy="50%" r="75%">
+          <stop offset="0%" stopColor="#faf5e8" />
+          <stop offset="100%" stopColor="#e8dfc8" />
+        </radialGradient>
+        <filter id="pieceShadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="2" stdDeviation="1.5" floodOpacity="0.45" />
+        </filter>
+      </defs>
+      <rect x={0} y={0} width={BOARD_SIZE} height={BOARD_SIZE} fill="url(#boardBg)" rx={16} />
+      <rect x={1} y={1} width={BOARD_SIZE - 2} height={BOARD_SIZE - 2} fill="none" stroke="#00000014" strokeWidth={2} rx={15} />
 
       {/* Quadrantes coloridos dos cantos, com 4 casas-base cada */}
       {corners.map((c) => (
         <g key={c.color}>
           <rect x={c.x * CELL} y={c.y * CELL} width={6 * CELL} height={6 * CELL} fill={COLOR_HEX[c.color]} opacity={0.18} />
-          <rect x={(c.x + 1) * CELL} y={(c.y + 1) * CELL} width={4 * CELL} height={4 * CELL} rx={16} fill="#fff" stroke={COLOR_HEX[c.color]} strokeWidth={3} />
+          <rect x={(c.x + 1) * CELL} y={(c.y + 1) * CELL} width={4 * CELL} height={4 * CELL} rx={16} fill="#fffdf8" stroke={COLOR_HEX[c.color]} strokeWidth={3} filter="url(#pieceShadow)" />
           {BASE_SPOTS[c.color].map((s, i) => (
             <circle key={i} cx={s.x * CELL} cy={s.y * CELL} r={CELL * 0.32} fill={COLOR_HEX[c.color]} opacity={0.25} />
           ))}
@@ -108,12 +118,18 @@ export default function LudoBoard({ state, myColor, movablePieces, onMovePiece }
             onClick={() => isMovable && onMovePiece(piece.id)}
             style={{ cursor: isMovable ? "pointer" : "default" }}
           >
-            {isMovable && <circle r={CELL * 0.42} fill="none" stroke={COLOR_HEX[piece.color]} strokeWidth={3} opacity={0.9}>
-              <animate attributeName="r" values={`${CELL * 0.38};${CELL * 0.48};${CELL * 0.38}`} dur="1s" repeatCount="indefinite" />
-            </circle>}
-            <circle r={CELL * 0.33} fill={COLOR_HEX[piece.color]} stroke={COLOR_DARK[piece.color]} strokeWidth={2} />
-            <circle r={CELL * 0.12} fill="#fff" opacity={0.5} cx={-3} cy={-3} />
-            {isMine && <circle r={CELL * 0.42} fill="none" stroke="#fff" strokeWidth={1} opacity={0.6} />}
+            {isMovable && (
+              <circle r={CELL * 0.42} fill="none" stroke={COLOR_HEX[piece.color]} strokeWidth={3} opacity={0.9}>
+                <animate attributeName="r" values={`${CELL * 0.38};${CELL * 0.5};${CELL * 0.38}`} dur="1.1s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.9;0.3;0.9" dur="1.1s" repeatCount="indefinite" />
+              </circle>
+            )}
+            <g filter="url(#pieceShadow)">
+              <ellipse cy={CELL * 0.08} rx={CELL * 0.3} ry={CELL * 0.08} fill="#000" opacity={0.18} />
+              <circle r={CELL * 0.33} fill={COLOR_HEX[piece.color]} stroke={COLOR_DARK[piece.color]} strokeWidth={2} />
+              <circle r={CELL * 0.18} fill="#fff" opacity={0.22} cy={-CELL * 0.08} />
+            </g>
+            {isMine && <circle r={CELL * 0.42} fill="none" stroke="#fff" strokeWidth={1.5} opacity={0.7} />}
           </g>
         );
       })}

@@ -11,10 +11,15 @@ export interface User {
 }
 
 async function request(path: string, options: RequestInit = {}) {
+  const token = localStorage.getItem("playhub_token");
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Erro inesperado. Tente novamente.");
