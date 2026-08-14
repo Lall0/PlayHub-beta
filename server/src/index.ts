@@ -14,9 +14,23 @@ import { ensureSchema } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
-const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://playhub-frontend.onrender.com",
+];
 
-app.use(cors({ origin: CLIENT_URL, credentials: true }));
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -25,7 +39,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/games", gamesRouter);
 
-const io = new Server(httpServer, { cors: { origin: CLIENT_URL, credentials: true } });
+const io = new Server(httpServer, { cors: corsOptions });
 registerLudoSockets(io);
 registerChessSockets(io);
 registerCheckersSockets(io);
