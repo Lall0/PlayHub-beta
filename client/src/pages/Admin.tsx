@@ -11,6 +11,11 @@ export default function Admin() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  function loadUsers() {
+    api.adminUsers().then((u) => setUsers(u.users)).catch((e) => setError(e.message));
+  }
 
   useEffect(() => {
     if (user?.role !== "ADMIN") return;
@@ -23,6 +28,44 @@ export default function Admin() {
       })
       .catch((e) => setError(e.message));
   }, [user]);
+
+  async function handleBan(userId: string) {
+    setActionLoading(userId);
+    try {
+      await api.adminBanUser(userId);
+      loadUsers();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleUnban(userId: string) {
+    setActionLoading(userId);
+    try {
+      await api.adminUnbanUser(userId);
+      loadUsers();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function handleResetPassword(userId: string, username: string) {
+    const newPassword = window.prompt(`Nova senha para @${username} (mínimo 6 caracteres):`);
+    if (!newPassword) return;
+    setActionLoading(userId);
+    try {
+      await api.adminResetPassword(userId, newPassword);
+      window.alert(`Senha de @${username} redefinida com sucesso.`);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  }
 
   if (user && user.role !== "ADMIN") return <Navigate to="/" replace />;
 
@@ -47,7 +90,7 @@ export default function Admin() {
           <table className="w-full text-sm">
             <thead className="text-white/40 text-xs">
               <tr className="text-left">
-                <th className="pb-2">Usuário</th><th>Role</th><th>Status</th><th>V</th><th>D</th><th>Partidas</th>
+                <th className="pb-2">Usuário</th><th>Role</th><th>Status</th><th>V</th><th>D</th><th>Partidas</th><th>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -55,10 +98,42 @@ export default function Admin() {
                 <tr key={u.id} className="border-t border-border/60">
                   <td className="py-1.5">{u.username}</td>
                   <td>{u.role}</td>
-                  <td>{u.status}</td>
+                  <td>
+                    {u.status === "BANNED" ? <span className="text-red-400">BANIDO</span> : u.status}
+                  </td>
                   <td>{u.wins}</td>
                   <td>{u.losses}</td>
                   <td>{u.games_played}</td>
+                  <td className="py-1.5">
+                    {u.role !== "ADMIN" && (
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => handleResetPassword(u.id, u.username)}
+                          disabled={actionLoading === u.id}
+                          className="text-[10px] px-2 py-0.5 rounded border border-border text-white/50 hover:text-white hover:border-white/40 transition disabled:opacity-40"
+                        >
+                          resetar senha
+                        </button>
+                        {u.status === "BANNED" ? (
+                          <button
+                            onClick={() => handleUnban(u.id)}
+                            disabled={actionLoading === u.id}
+                            className="text-[10px] px-2 py-0.5 rounded border border-green-500/40 text-green-400 hover:bg-green-500/10 transition disabled:opacity-40"
+                          >
+                            desbanir
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleBan(u.id)}
+                            disabled={actionLoading === u.id}
+                            className="text-[10px] px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 transition disabled:opacity-40"
+                          >
+                            banir
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

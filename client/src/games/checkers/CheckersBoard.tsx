@@ -6,11 +6,17 @@ interface Piece {
   king: boolean;
 }
 
+interface Destination {
+  row: number;
+  col: number;
+  captured?: string[];
+}
+
 interface Props {
   pieces: Piece[];
   myColor?: "LIGHT" | "DARK";
   selectedPieceId: string | null;
-  legalDestinations: { row: number; col: number }[];
+  legalDestinations: Destination[];
   onSelectPiece: (pieceId: string) => void;
   onMoveTo: (row: number, col: number) => void;
 }
@@ -36,16 +42,30 @@ export default function CheckersBoard({ pieces, myColor, selectedPieceId, legalD
     }
   }
 
-  const destSet = new Set(legalDestinations.map((d) => `${d.row}-${d.col}`));
-
   return (
     <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full max-w-[520px] max-h-[520px] mx-auto select-none">
       {squares}
 
-      {/* destinos legais destacados */}
-      {legalDestinations.map((d, i) => (
-        <circle key={i} cx={d.col * CELL + CELL / 2} cy={d.row * CELL + CELL / 2} r={CELL * 0.15} fill="#22c55e" opacity={0.7} onClick={() => onMoveTo(d.row, d.col)} style={{ cursor: "pointer" }} />
-      ))}
+      {/* destinos legais: captura em destaque diferente (vermelho) de movimento simples (verde) */}
+      {legalDestinations.map((d, i) => {
+        const isCapture = !!d.captured?.length;
+        return (
+          <g key={i} onClick={() => onMoveTo(d.row, d.col)} style={{ cursor: "pointer" }}>
+            {isCapture && (
+              <circle cx={d.col * CELL + CELL / 2} cy={d.row * CELL + CELL / 2} r={CELL * 0.4} fill="none" stroke="#ef4444" strokeWidth={2.5} opacity={0.85}>
+                <animate attributeName="r" values={`${CELL * 0.32};${CELL * 0.42};${CELL * 0.32}`} dur="1s" repeatCount="indefinite" />
+              </circle>
+            )}
+            <circle
+              cx={d.col * CELL + CELL / 2}
+              cy={d.row * CELL + CELL / 2}
+              r={CELL * 0.15}
+              fill={isCapture ? "#ef4444" : "#22c55e"}
+              opacity={0.8}
+            />
+          </g>
+        );
+      })}
 
       {pieces.map((p) => {
         const isSelected = p.id === selectedPieceId;

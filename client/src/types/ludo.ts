@@ -32,5 +32,6 @@ export interface RoomView {
   status: "WAITING" | "PLAYING" | "PAUSED" | "FINISHED";
   players: { userId: string; username: string; color?: Color; order: number; connected: boolean; isBot?: boolean }[];
   endVotes?: string[];
+  startVotes?: string[];
   state?: LudoState;
 }

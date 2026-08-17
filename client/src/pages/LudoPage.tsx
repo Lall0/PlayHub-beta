@@ -21,11 +21,10 @@ export default function LudoPage() {
   const navigate = useNavigate();
   const {
     connected, connectError, room, publicRooms, errorMsg, lastDice, winner,
-    createRoom, joinRoom, listRooms, startGame, addBot, removeBot, rollDice, movePiece,
+    createRoom, joinRoom, listRooms, startGame, cancelStartVote, addBot, removeBot, rollDice, movePiece,
     pauseGame, resumeGame, leaveRoom, destroyRoom, requestEnd, cancelEndVote, forceEnd,
   } = useLudoSocket();
 
-  const [maxPlayers, setMaxPlayers] = useState(4);
   const [joinCode, setJoinCode] = useState("");
   const [joining, setJoining] = useState(false);
   const [rolling, setRolling] = useState(false);
@@ -84,20 +83,12 @@ export default function LudoPage() {
 
           <div className="bg-surface border border-border rounded-2xl p-6 mb-6 relative overflow-hidden">
             <div className="absolute inset-0 opacity-[0.06] bg-[conic-gradient(from_90deg,#e74c3c,#f1c40f,#27ae60,#2f80ed,#e74c3c)] pointer-events-none" />
-            <h2 className="text-sm font-medium text-white/70 mb-4 relative">COMO VOCÊ QUER JOGAR?</h2>
-            <div className="flex gap-3 mb-4 relative">
-              {[2, 3, 4].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setMaxPlayers(n)}
-                  className={`px-4 py-2 rounded-lg text-sm border transition ${maxPlayers === n ? "bg-white text-black border-white" : "border-border text-white/60 hover:border-white/40"}`}
-                >
-                  {n} jogadores
-                </button>
-              ))}
-            </div>
+            <h2 className="text-sm font-medium text-white/70 mb-2 relative">CRIAR SALA</h2>
+            <p className="text-white/40 text-xs mb-4 relative">
+              Até 4 jogadores podem entrar. Quando quiserem começar, qualquer um propõe e todos confirmam.
+            </p>
             <button
-              onClick={() => createRoom(maxPlayers)}
+              onClick={() => createRoom()}
               disabled={!connected}
               className="relative bg-white text-black font-semibold rounded-lg px-5 py-2.5 text-sm hover:bg-white/90 transition disabled:opacity-40"
             >
@@ -166,29 +157,33 @@ export default function LudoPage() {
           {errorMsg && <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-lg px-3 py-2 mb-4">{errorMsg}</div>}
 
           <div className="bg-surface border border-border rounded-2xl p-5 space-y-2 mb-4">
-            {room.players.map((p) => (
-              <div key={p.userId} className="flex items-center gap-2 text-sm py-1">
-                <span className={`w-2 h-2 rounded-full ${p.connected ? "bg-green-400" : "bg-white/20"}`} />
-                <span className="text-white/80">{p.username}{p.isBot ? " 🤖" : ""}</span>
-                {p.userId === room.hostId && <span className="text-[10px] text-white/40 ml-1">anfitrião</span>}
-                {isHost && p.isBot && (
-                  <button onClick={() => removeBot(room.code, p.userId)} className="ml-auto text-[10px] text-white/40 hover:text-red-400 transition">
-                    remover
-                  </button>
-                )}
+            {room.players.map((p) => {
+              const confirmed = (room.startVotes || []).includes(p.userId);
+              return (
+                <div key={p.userId} className="flex items-center gap-2 text-sm py-1">
+                  <span className={`w-2 h-2 rounded-full ${p.connected ? "bg-green-400" : "bg-white/20"}`} />
+                  <span className="text-white/80">{p.username}{p.isBot ? " 🤖" : ""}</span>
+                  {p.userId === room.hostId && <span className="text-[10px] text-white/40 ml-1">anfitrião</span>}
+                  {(confirmed || p.isBot) && <span className="text-[10px] text-green-400 ml-auto">✓ pronto</span>}
+                  {isHost && p.isBot && (
+                    <button onClick={() => removeBot(room.code, p.userId)} className="text-[10px] text-white/40 hover:text-red-400 transition">
+                      remover
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {room.players.length < 4 && (
+              <div className="flex items-center gap-2 text-sm py-1 text-white/30">
+                <span className="w-2 h-2 rounded-full border border-white/20" /> Compartilhe o código para mais pessoas entrarem...
               </div>
-            ))}
-            {Array.from({ length: room.maxPlayers - room.players.length }).map((_, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm py-1 text-white/30">
-                <span className="w-2 h-2 rounded-full border border-white/20" /> Aguardando jogador...
-              </div>
-            ))}
+            )}
           </div>
 
-          <p className="text-white/40 text-sm mb-4">{room.players.length}/{room.maxPlayers} jogadores</p>
+          <p className="text-white/40 text-sm mb-4">{room.players.length}/4 jogadores — todos precisam confirmar pra começar</p>
 
           <div className="flex flex-col gap-2 items-center">
-            {isHost && room.players.length < room.maxPlayers && (
+            {isHost && room.players.length < 4 && (
               <button
                 onClick={() => addBot(room.code)}
                 className="text-xs px-4 py-2 rounded-lg border border-border text-white/70 hover:border-white/40 transition"
@@ -196,16 +191,23 @@ export default function LudoPage() {
                 🤖 ADICIONAR BOT
               </button>
             )}
-            {isHost ? (
+
+            {(room.startVotes || []).includes(user?.id || "") ? (
+              <button
+                onClick={() => cancelStartVote(room.code)}
+                disabled={room.players.length < 2}
+                className="border border-border text-white/70 rounded-lg px-6 py-2.5 text-sm hover:border-white/40 transition disabled:opacity-40"
+              >
+                Cancelar minha confirmação
+              </button>
+            ) : (
               <button
                 onClick={() => startGame(room.code)}
                 disabled={room.players.length < 2}
                 className="bg-white text-black font-semibold rounded-lg px-6 py-2.5 text-sm hover:bg-white/90 transition disabled:opacity-40"
               >
-                INICIAR PARTIDA
+                {room.players.length < 2 ? "AGUARDANDO MAIS JOGADORES" : "PRONTO PARA COMEÇAR"}
               </button>
-            ) : (
-              <p className="text-white/40 text-sm">Aguardando o anfitrião iniciar...</p>
             )}
 
             {isHost ? (

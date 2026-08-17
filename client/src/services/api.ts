@@ -38,6 +38,15 @@ export const api = {
   adminUsers: () => request("/api/admin/users"),
   adminRooms: () => request("/api/admin/rooms"),
   adminGames: () => request("/api/admin/games"),
+  changePassword: (currentPassword: string, newPassword: string, confirmNewPassword: string) =>
+    request("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword, confirmNewPassword }),
+    }),
+  adminResetPassword: (userId: string, newPassword: string) =>
+    request(`/api/admin/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword }) }),
+  adminBanUser: (userId: string) => request(`/api/admin/users/${userId}/ban`, { method: "POST" }),
+  adminUnbanUser: (userId: string) => request(`/api/admin/users/${userId}/unban`, { method: "POST" }),
 };
 
 export { API_URL };

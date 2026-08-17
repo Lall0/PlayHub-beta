@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db";
-import { requireAuth, AuthedRequest } from "../middleware/auth";
+import { requireAuth, AuthedRequest, hashPassword } from "../middleware/auth";
+import { invalidateUsernameCache } from "../db/userCache";
 
 export const adminRouter = Router();
 
@@ -53,4 +54,54 @@ adminRouter.get("/games", async (_req, res) => {
      ORDER BY g.created_at DESC LIMIT 50`
   );
   res.json({ games: result.rows });
+});
+
+// --- Ações de escrita: resetar senha de um usuário e banir/desbanir ---
+
+adminRouter.post("/users/:id/reset-password", async (req, res) => {
+  const { newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: "A nova senha deve ter ao menos 6 caracteres" });
+  }
+  try {
+    const result = await pool.query("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2 RETURNING username", [
+      hashPassword(newPassword),
+      req.params.id,
+    ]);
+    if (!result.rows[0]) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json({ ok: true, username: result.rows[0].username });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao resetar senha." });
+  }
+});
+
+adminRouter.post("/users/:id/ban", async (req: AuthedRequest, res) => {
+  if (req.params.id === req.userId) return res.status(400).json({ error: "Você não pode banir a si mesmo" });
+  try {
+    const result = await pool.query(
+      "UPDATE users SET status = 'BANNED', updated_at = now() WHERE id = $1 RETURNING username",
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Usuário não encontrado" });
+    invalidateUsernameCache(String(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao banir usuário." });
+  }
+});
+
+adminRouter.post("/users/:id/unban", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "UPDATE users SET status = 'OFFLINE', updated_at = now() WHERE id = $1 RETURNING username",
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Usuário não encontrado" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao desbanir usuário." });
+  }
 });

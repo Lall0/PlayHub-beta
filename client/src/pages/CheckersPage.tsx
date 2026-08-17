@@ -6,14 +6,20 @@ import { useAuth } from "../contexts/AuthContext";
 import Navbar from "../components/Navbar";
 import CheckersBoard from "../games/checkers/CheckersBoard";
 import EndGameCard from "../components/EndGameCard";
+import CoinFlip from "../components/CoinFlip";
+import ClockDisplay from "../components/ClockDisplay";
 
 interface RoomView {
   code: string;
   hostId: string;
-  status: "WAITING" | "PLAYING" | "FINISHED";
+  status: "WAITING" | "PLAYING" | "PAUSED" | "FINISHED";
   players: { userId: string; username: string; color?: "LIGHT" | "DARK"; connected: boolean }[];
   state?: any;
   endVotes?: string[];
+  startVotes?: string[];
+  clockMs?: Record<string, number>;
+  turnStartedAt?: number;
+  coinFlip?: { result: "CARA" | "COROA"; winnerUserId: string };
 }
 
 export default function CheckersPage() {
@@ -24,10 +30,11 @@ export default function CheckersPage() {
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
-  const [legalDestinations, setLegalDestinations] = useState<{ row: number; col: number }[]>([]);
+  const [legalDestinations, setLegalDestinations] = useState<{ row: number; col: number; captured?: string[] }[]>([]);
   const [winner, setWinner] = useState<string | null>(null);
   const [endedByConsensus, setEndedByConsensus] = useState(false);
   const [showEndCard, setShowEndCard] = useState(false);
+  const [coinFlipping, setCoinFlipping] = useState<{ result: "CARA" | "COROA" | null; winnerUserId: string } | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("playhub_token");
@@ -35,13 +42,35 @@ export default function CheckersPage() {
     const s = io(`${API_URL}/checkers`, { auth: { token } });
     socketRef.current = s;
     s.on("room:update", (r) => setRoom(r));
-    s.on("game:started", (r) => setRoom(r));
+    s.on("game:coinFlip", (d) => {
+      setCoinFlipping({ result: null, winnerUserId: d.winnerUserId });
+      setTimeout(() => setCoinFlipping({ result: d.result, winnerUserId: d.winnerUserId }), 1200);
+    });
+    s.on("game:started", (r) => {
+      setRoom(r);
+      setTimeout(() => setCoinFlipping(null), 1000);
+    });
+    s.on("game:paused", (r) => setRoom(r));
+    s.on("game:resumed", (r) => setRoom(r));
     s.on("game:state", (r) => { setRoom(r); setSelectedPieceId(null); setLegalDestinations([]); });
-    s.on("game:legalMoves", (d) => setLegalDestinations(d.moves.map((m: any) => m.destination)));
+    s.on("game:legalMoves", (d) => {
+      setLegalDestinations(d.moves.map((m: any) => ({ ...m.destination, captured: m.captured })));
+      if (d.mandatoryCaptureElsewhere) {
+        setError("Captura obrigatória! Escolha a peça que pode capturar.");
+        setTimeout(() => setError(null), 3000);
+      }
+    });
     s.on("game:finished", (d) => { setWinner(d.winnerUserId); setRoom((r) => (r ? { ...r, state: d.state, status: "FINISHED" } : r)); });
     s.on("game:endVoteUpdate", (r) => setRoom(r));
     s.on("game:endedByConsensus", (r) => { setRoom(r); setEndedByConsensus(true); setShowEndCard(false); });
-    s.on("room:destroyed", () => setRoom(null));
+    s.on("room:destroyed", (data?: { reason?: string }) => {
+      setRoom(null);
+      if (data?.reason === "TIMEOUT") {
+        setError("A sala foi cancelada automaticamente por ficar 2 minutos sem ninguém iniciar a partida.");
+        setTimeout(() => setError(null), 6000);
+      }
+    });
+    s.on("room:startVoteUpdate", (r) => setRoom(r));
     s.on("error:message", (msg) => { setError(msg); setTimeout(() => setError(null), 3500); });
     return () => { s.disconnect(); };
   }, []);
@@ -63,6 +92,9 @@ export default function CheckersPage() {
   async function startGame() {
     try { await emitAck("room:start", { code: room!.code }); } catch (e: any) { setError(e.message); }
   }
+  async function cancelStartVote() {
+    try { await emitAck("room:cancelStartVote", { code: room!.code }); } catch (e: any) { setError(e.message); }
+  }
   async function leaveRoom() {
     try { await emitAck("room:leave", { code: room!.code }); } catch {}
     setRoom(null);
@@ -75,6 +107,12 @@ export default function CheckersPage() {
   }
   async function requestEnd() {
     try { await emitAck("game:requestEnd", { code: room!.code }); } catch (e: any) { setError(e.message); }
+  }
+  async function pauseGame() {
+    try { await emitAck("game:pause", { code: room!.code }); } catch (e: any) { setError(e.message); }
+  }
+  async function resumeGame() {
+    try { await emitAck("game:resume", { code: room!.code }); } catch (e: any) { setError(e.message); }
   }
   async function cancelEndVote() {
     try { await emitAck("game:cancelEndVote", { code: room!.code }); } catch (e: any) { setError(e.message); }
@@ -131,21 +169,35 @@ export default function CheckersPage() {
           </p>
           {error && <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
           <div className="bg-surface border border-border rounded-2xl p-5 space-y-2 mb-4">
-            {room.players.map((p) => (
-              <div key={p.userId} className="flex items-center gap-2 text-sm py-1">
-                <span className={`w-2 h-2 rounded-full ${p.connected ? "bg-green-400" : "bg-white/20"}`} />
-                {p.username}
-                {p.userId === room.hostId && <span className="text-[10px] text-white/40 ml-1">anfitrião</span>}
-              </div>
-            ))}
+            {room.players.map((p) => {
+              const confirmed = (room.startVotes || []).includes(p.userId);
+              return (
+                <div key={p.userId} className="flex items-center gap-2 text-sm py-1">
+                  <span className={`w-2 h-2 rounded-full ${p.connected ? "bg-green-400" : "bg-white/20"}`} />
+                  {p.username}
+                  {p.userId === room.hostId && <span className="text-[10px] text-white/40 ml-1">anfitrião</span>}
+                  {confirmed && <span className="text-[10px] text-green-400 ml-auto">✓ pronto</span>}
+                </div>
+              );
+            })}
             {room.players.length < 2 && <div className="text-white/30 text-sm py-1">Aguardando jogador...</div>}
           </div>
-          {isHost ? (
-            <button onClick={startGame} disabled={room.players.length < 2} className="bg-white text-black font-semibold rounded-lg px-6 py-2.5 text-sm hover:bg-white/90 transition disabled:opacity-40">
-              INICIAR PARTIDA
+          {(room.startVotes || []).includes(user?.id || "") ? (
+            <button
+              onClick={cancelStartVote}
+              disabled={room.players.length < 2}
+              className="border border-border text-white/70 rounded-lg px-6 py-2.5 text-sm hover:border-white/40 transition disabled:opacity-40"
+            >
+              Cancelar minha confirmação
             </button>
           ) : (
-            <p className="text-white/40 text-sm">Aguardando o anfitrião iniciar...</p>
+            <button
+              onClick={startGame}
+              disabled={room.players.length < 2}
+              className="bg-white text-black font-semibold rounded-lg px-6 py-2.5 text-sm hover:bg-white/90 transition disabled:opacity-40"
+            >
+              {room.players.length < 2 ? "AGUARDANDO ADVERSÁRIO" : "PRONTO PARA COMEÇAR"}
+            </button>
           )}
           <div>
             <button onClick={isHost ? destroyRoom : leaveRoom} className="text-xs text-white/40 hover:text-red-400 transition mt-4">
@@ -183,13 +235,38 @@ export default function CheckersPage() {
           <p className="text-white/70 text-sm">{isMyTurn ? "Seu turno" : `Vez de ${room.players.find((p) => p.userId === currentPlayer?.userId)?.username}`}</p>
           <div className="flex gap-2">
             {room.status === "PLAYING" && (
-              <button onClick={() => setShowEndCard(true)} className="text-xs px-3 py-1.5 rounded-full border border-border text-white/50 hover:text-red-400 hover:border-red-400/40 transition">
-                Encerrar partida
-              </button>
+              <>
+                <button onClick={pauseGame} className="text-xs px-3 py-1.5 rounded-full border border-border hover:border-white/40 transition">⏸ Pausar</button>
+                <button onClick={() => setShowEndCard(true)} className="text-xs px-3 py-1.5 rounded-full border border-border text-white/50 hover:text-red-400 hover:border-red-400/40 transition">
+                  Encerrar partida
+                </button>
+              </>
+            )}
+            {room.status === "PAUSED" && (
+              <button onClick={resumeGame} className="text-xs px-3 py-1.5 rounded-full border border-white/40 bg-white text-black transition">Retomar</button>
             )}
             <button onClick={leaveRoom} className="text-xs px-3 py-1.5 rounded-full border border-border text-white/50 hover:text-red-400 hover:border-red-400/40 transition">Sair</button>
           </div>
         </div>
+
+        {room.status === "PAUSED" && (
+          <div className="text-center py-3 mb-4 bg-surface border border-border rounded-xl text-white/60 text-sm">PARTIDA PAUSADA</div>
+        )}
+
+        <div className="flex justify-center gap-3 mb-4">
+          {room.players.map((p) => (
+            <ClockDisplay
+              key={p.userId}
+              clockMs={room.clockMs}
+              turnStartedAt={room.turnStartedAt}
+              userId={p.userId}
+              isCurrentTurn={p.userId === currentPlayer?.userId}
+              active={room.status === "PLAYING"}
+              label={p.username}
+            />
+          ))}
+        </div>
+
         <div className="bg-surface border border-border rounded-2xl p-4">
           <CheckersBoard
             pieces={state.pieces}
@@ -201,6 +278,13 @@ export default function CheckersPage() {
           />
         </div>
       </div>
+
+      {coinFlipping && (
+        <CoinFlip
+          result={coinFlipping.result}
+          winnerName={room.players.find((p) => p.userId === coinFlipping.winnerUserId)?.username || null}
+        />
+      )}
 
       {showEndCard && (
         <EndGameCard

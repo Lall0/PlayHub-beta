@@ -57,14 +57,19 @@ function useLudoSocketInternal() {
       localStorage.setItem("playhub_room_code", r.code);
     });
     s.on("room:update", (r: RoomView) => setRoom(r));
-    s.on("room:destroyed", () => {
+    s.on("room:destroyed", (data?: { reason?: string }) => {
       setRoom(null);
       localStorage.removeItem("playhub_room_code");
+      if (data?.reason === "TIMEOUT") {
+        setErrorMsg("A sala foi cancelada automaticamente por ficar 2 minutos sem ninguém iniciar a partida.");
+        setTimeout(() => setErrorMsg(null), 6000);
+      }
     });
     s.on("game:started", (r: RoomView) => setRoom(r));
     s.on("game:state", (r: RoomView) => setRoom(r));
     s.on("game:paused", (r: RoomView) => setRoom(r));
     s.on("game:resumed", (r: RoomView) => setRoom(r));
+    s.on("room:startVoteUpdate", (r: RoomView) => setRoom(r));
     s.on("game:endVoteUpdate", (r: RoomView) => setRoom(r));
     s.on("game:endedByConsensus", (r: RoomView) => {
       setRoom(r);
@@ -101,9 +106,9 @@ function useLudoSocketInternal() {
     setTimeout(() => setErrorMsg(null), 4000);
   }
 
-  const createRoom = useCallback(async (maxPlayers: number) => {
+  const createRoom = useCallback(async () => {
     try {
-      await emitWithAck(socketRef.current, "room:create", { maxPlayers });
+      await emitWithAck(socketRef.current, "room:create", {});
     } catch (err) {
       showError(err);
     }
@@ -122,6 +127,14 @@ function useLudoSocketInternal() {
   const startGame = useCallback(async (code: string) => {
     try {
       await emitWithAck(socketRef.current, "room:start", { code });
+    } catch (err) {
+      showError(err);
+    }
+  }, []);
+
+  const cancelStartVote = useCallback(async (code: string) => {
+    try {
+      await emitWithAck(socketRef.current, "room:cancelStartVote", { code });
     } catch (err) {
       showError(err);
     }
@@ -188,7 +201,7 @@ function useLudoSocketInternal() {
 
   return {
     connected, connectError, room, publicRooms, presence, errorMsg, lastDice, winner, incomingInvite,
-    createRoom, joinRoom, listRooms, startGame, addBot, removeBot, rollDice, movePiece, pauseGame, resumeGame,
+    createRoom, joinRoom, listRooms, startGame, cancelStartVote, addBot, removeBot, rollDice, movePiece, pauseGame, resumeGame,
     leaveRoom, destroyRoom, sendInvite, acceptInvite, declineInvite,
     requestEnd, cancelEndVote, forceEnd,
   };

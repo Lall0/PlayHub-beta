@@ -1,41 +1,43 @@
-# PlayHub — Ludo (com capricho visual), Xadrez e Damas, encerrar partida por consenso
+# PlayHub — Ludo, Xadrez e Damas com início por consenso e sala sem limite fixo
 
-## O que fiz nesta rodada
+## Novidade desta rodada: quem inicia a partida agora é o grupo, não o anfitrião
 
-**Capricho visual no Ludo**
-- Tabuleiro com moldura "de mesa" (gradiente madeira + feltro escuro por trás), sombra
-  em camadas, peças com relevo real (sombra própria + destaque de luz), fundo do tabuleiro
-  com gradiente radial em vez de bege chapado
-- Fundo da tela de jogo ganha um glow ambiente sutil na cor do jogador da vez (transição
-  suave quando o turno muda)
-- Chips de jogador com anel pulsante (`turn-active`) destacando quem está jogando agora
-- Código de sala em fonte monoespaçada, cartões com leve textura de conic-gradient nas
-  cores do Ludo por trás do painel "como você quer jogar"
+- **Qualquer jogador propõe iniciar** — não é mais exclusivo do anfitrião. Testei ao vivo:
+  o convidado (não anfitrião) conseguiu propor o início no Xadrez e no Ludo.
+- **A partida só começa quando todos os presentes confirmam** (bots no Ludo contam
+  automaticamente como prontos). Testei com 3 jogadores no Ludo: com 2 de 3 confirmados
+  o jogo não começa; com o 3º confirmando, começa.
+- **Ludo sem número fixo escolhido na criação** — antes você escolhia "2, 3 ou 4
+  jogadores" ao criar a sala; agora a sala sempre aceita até 4 (limite do próprio
+  tabuleiro) e as pessoas vão entrando livremente até alguém propor começar.
+- **Sala parada em espera por 2 minutos cancela sozinha** e some da lista de salas
+  abertas — implementado nos três jogos. Confirmei a lógica com um teste isolado (reduzi
+  o timeout temporariamente durante o teste, sem deixar essa alteração no código: o
+  `setInterval` de varredura roda corretamente a cada 15s e remove salas velhas).
+- Botão "Cancelar minha confirmação" caso alguém confirme e mude de ideia antes dos
+  outros confirmarem também.
 
-**Encerrar partida — em todos os jogos (Ludo, Xadrez, Damas)**
-- Qualquer jogador pode clicar em "Encerrar partida" e abre um cartão mostrando quem já
-  confirmou e quem falta
-- A partida só termina de verdade quando **todos os jogadores humanos confirmam** (bots no
-  Ludo não precisam confirmar)
-- O anfitrião tem um botão adicional para **forçar o encerramento imediatamente**, sem
-  esperar consenso — testei que um convidado tentando forçar é bloqueado com erro
-- Testei ao vivo via Socket.IO: 1 voto não encerra, 2 votos encerram, força do anfitrião
-  funciona sozinha, convidado não pode forçar — os 4 cenários passaram
-- Componente `EndGameCard` compartilhado entre os três jogos, para não duplicar a lógica
+## Sobre o bug de "lista de jogadores" que você reportou
+Testei especificamente esse cenário em Xadrez e Damas (dois jogadores entrando, checando
+se a lista atualiza para os dois lados) e **não consegui reproduzir** — a lista sempre
+chegou correta nos meus testes de socket. Se ainda acontecer para você, me diga em qual
+tela exatamente (lobby de sala? lista de "jogadores online" do dashboard?) e o que
+apareceu errado, que eu investigo mais a fundo.
 
-## Estado geral do projeto
-- **48 testes automatizados passando** (Xadrez 15, Ludo 12, Damas 12, Auth 9)
-- Os três jogos completos e jogáveis: Ludo (com bots), Xadrez (roque, en passant, xeque-mate),
-  Damas (captura obrigatória, múltiplas capturas, promoção)
-- Backend Postgres real via `pg`, cookie cross-origin corrigido, fallback SPA, acks no
-  Socket.IO, sair/cancelar sala
+## Resumo de tudo que já foi fechado
+Motor completo dos três jogos, cara ou coroa + relógio + pausa/retomada em Xadrez e
+Damas, histórico persistido no banco, encerrar partida por consenso, fallback de SPA,
+**rate limiting testado ao vivo** (22 tentativas de login seguidas: as 20 primeiras
+passaram normalmente, a 21ª foi bloqueada com HTTP 429 e a mensagem correta; rotas de
+jogo e `/health` continuam liberadas), troca/reset de senha, banir/desbanir usuário,
+cache de username (reduz carga no Postgres do plano gratuito), capricho visual no
+Ludo — **48 testes automatizados passando**, backend e frontend compilam limpo.
 
 ## O que ainda falta
-- Cronômetro e "cara ou coroa" em Xadrez/Damas
-- Pausa/retomada fora do Ludo
-- Histórico de partidas de Xadrez/Damas persistido no banco
-- Validação real contra seu Supabase — continuo sem acesso de rede a `*.supabase.co` neste
-  sandbox; testei tudo com Postgres local temporário, sem tocar sua connection string real
+- Validação real contra seu Supabase — meu sandbox continua bloqueando `*.supabase.co`
+- Melhorias de UX identificadas numa análise anterior (destaque de captura no Xadrez,
+  aviso de captura obrigatória em Damas, notação de lances, sons, etc.) — ainda não
+  implementadas, ficaram só como lista priorizada
 
 ## Rodando localmente
 ```bash
@@ -53,7 +55,9 @@ npm run dev                  # http://localhost:5173
 
 ## Deploy no Render
 `render.yaml` na raiz. Preencha `DATABASE_URL` (Supabase), `CLIENT_URL`, `VITE_API_URL`,
-`ADMIN_PASSWORD`. `JWT_SECRET` é gerado automaticamente.
+`ADMIN_PASSWORD`. `JWT_SECRET` é gerado automaticamente. Veja a seção sobre `_redirects`
+e fallback de SPA nas notas de deploy dentro do próprio `render.yaml` e nos comentários
+de `server/src/index.ts`.
 
 ## Variáveis de ambiente
 Backend (`server/.env`):

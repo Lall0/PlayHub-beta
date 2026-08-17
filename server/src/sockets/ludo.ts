@@ -1,5 +1,6 @@
 import { Server, Socket } from "socket.io";
 import { pool, uuid } from "../db";
+import { getUsernameCached } from "../db/userCache";
 import { verifyToken } from "../middleware/auth";
 import {
   createInitialState,
@@ -30,6 +31,8 @@ interface RoomMemory {
   state?: LudoState;
   turnStartedAt?: number;
   endVotes: Set<string>; // userIds que confirmaram encerrar a partida por consenso
+  startVotes: Set<string>; // userIds que confirmaram iniciar a partida por consenso
+  createdAt: number;
 }
 
 const rooms = new Map<string, RoomMemory>();
@@ -55,6 +58,7 @@ function publicRoomView(room: RoomMemory) {
     })),
     state: room.state,
     endVotes: [...room.endVotes],
+    startVotes: [...room.startVotes],
   };
 }
 
@@ -74,6 +78,20 @@ function fail(cb: Function | undefined, error: string) {
 }
 
 export function registerLudoSockets(io: Server) {
+  // Sala criada e ninguém propõe iniciar em 2 minutos: cancela sozinha e some da
+  // lista de salas abertas, para não acumular lixo no lobby.
+  setInterval(() => {
+    const now = Date.now();
+    for (const room of rooms.values()) {
+      if (room.status === "WAITING" && now - room.createdAt > 2 * 60 * 1000) {
+        rooms.delete(room.code);
+        io.to(room.code).emit("room:destroyed", { reason: "TIMEOUT" });
+        io.emit("rooms:updated");
+        pool.query("UPDATE rooms SET status = 'ABANDONED' WHERE code = $1", [room.code]).catch(() => {});
+      }
+    }
+  }, 15_000);
+
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token as string | undefined;
     const payload = token ? verifyToken(token) : null;
@@ -86,9 +104,9 @@ export function registerLudoSockets(io: Server) {
     const userId = (socket as any).userId as string;
     let user: { id: string; username: string };
     try {
-      const userResult = await pool.query("SELECT id, username FROM users WHERE id = $1", [userId]);
-      if (!userResult.rows[0]) return socket.disconnect();
-      user = userResult.rows[0];
+      const username = await getUsernameCached(userId);
+      if (!username) return socket.disconnect();
+      user = { id: userId, username };
     } catch (err) {
       console.error("Erro ao carregar usuário do socket:", err);
       return socket.disconnect();
@@ -105,10 +123,12 @@ export function registerLudoSockets(io: Server) {
       socket.emit("rooms:list", list);
     });
 
-    // --- Criar sala: agora responde via callback (ack), não depende só de evento assíncrono ---
-    socket.on("room:create", async ({ maxPlayers }: { maxPlayers: number }, callback?: Function) => {
+    // --- Criar sala: sempre com o máximo de 4 (limite do tabuleiro de Ludo).
+    // Não há mais um número fixo escolhido na criação — as pessoas vão entrando
+    // livremente e qualquer participante decide quando propor o início. ---
+    socket.on("room:create", async (_data: any, callback?: Function) => {
       try {
-        const mp = Math.min(4, Math.max(2, maxPlayers || 4));
+        const mp = 4;
         const code = genCode();
         const room: RoomMemory = {
           code,
@@ -117,6 +137,8 @@ export function registerLudoSockets(io: Server) {
           status: "WAITING",
           players: [{ userId, username: user.username, socketId: socket.id, order: 0, isBot: false }],
           endVotes: new Set(),
+          startVotes: new Set(),
+          createdAt: Date.now(),
         };
         rooms.set(code, room);
         await pool.query(
@@ -199,34 +221,39 @@ export function registerLudoSockets(io: Server) {
       ok(callback);
     });
 
+    // --- Iniciar partida por consenso: qualquer jogador (não só o anfitrião) pode
+    // propor. A partida só começa de verdade quando todos os jogadores humanos
+    // presentes confirmarem (bots contam automaticamente como "prontos"). ---
     socket.on("room:start", async ({ code }: { code: string }, callback?: Function) => {
       const room = rooms.get(code);
       if (!room) return fail(callback, "Sala inexistente");
-      if (room.hostId !== userId) return fail(callback, "Somente o anfitrião pode iniciar");
-      if (room.players.length < 2) return fail(callback, "Mínimo de 2 jogadores");
+      if (!room.players.find((p) => p.userId === userId)) return fail(callback, "Você não está nesta sala");
+      if (room.players.length < 2) return fail(callback, "Mínimo de 2 jogadores para iniciar");
+
+      room.startVotes.add(userId);
+      const humanPlayers = room.players.filter((p) => !p.isBot);
+      const allConfirmed = humanPlayers.every((p) => room.startVotes.has(p.userId));
+
+      if (!allConfirmed) {
+        io.to(code).emit("room:startVoteUpdate", publicRoomView(room));
+        return ok(callback, { waiting: true });
+      }
 
       try {
-        const colors = shuffle([...ALL_COLORS]).slice(0, room.players.length);
-        room.players.forEach((p, i) => (p.color = colors[i]));
-        room.status = "PLAYING";
-        room.state = createInitialState(room.players.map((p) => ({ userId: p.userId, color: p.color!, order: p.order })));
-        room.turnStartedAt = Date.now();
-
-        await pool.query("UPDATE rooms SET status = 'PLAYING', updated_at = now() WHERE code = $1", [code]);
-        const roomRow = await pool.query("SELECT id FROM rooms WHERE code = $1", [code]);
-        await pool.query(
-          "INSERT INTO games (room_id, game_type, status, current_turn, state, started_at) VALUES ($1, 'LUDO', 'PLAYING', 0, $2, now())",
-          [roomRow.rows[0].id, JSON.stringify(room.state)]
-        );
-        await Promise.all(room.players.filter((p) => !p.isBot).map((p) => setUserStatus(p.userId, "IN_GAME")));
-
-        io.to(code).emit("game:started", publicRoomView(room));
-        ok(callback);
-        maybePlayBotTurn(io, room);
+        await actuallyStartGame(io, room);
+        ok(callback, { waiting: false });
       } catch (err) {
         console.error("Erro ao iniciar jogo:", err);
         fail(callback, "Erro ao iniciar partida.");
       }
+    });
+
+    socket.on("room:cancelStartVote", ({ code }: { code: string }, callback?: Function) => {
+      const room = rooms.get(code);
+      if (!room) return fail(callback, "Sala inexistente");
+      room.startVotes.delete(userId);
+      io.to(code).emit("room:startVoteUpdate", publicRoomView(room));
+      ok(callback);
     });
 
     socket.on("game:rollDice", ({ code }: { code: string }) => {
@@ -367,12 +394,21 @@ export function registerLudoSockets(io: Server) {
       }
 
       const code = genCode();
-      const room: RoomMemory = { code, hostId: invite.sender_id, maxPlayers: 2, status: "WAITING", players: [], endVotes: new Set() };
+      const room: RoomMemory = {
+        code,
+        hostId: invite.sender_id,
+        maxPlayers: 4,
+        status: "WAITING",
+        players: [],
+        endVotes: new Set(),
+        startVotes: new Set(),
+        createdAt: Date.now(),
+      };
       const sender = onlineUsers.get(invite.sender_id);
-      const senderUserRow = await pool.query("SELECT username FROM users WHERE id = $1", [invite.sender_id]);
+      const senderUsername = await getUsernameCached(invite.sender_id);
       room.players.push({
         userId: invite.sender_id,
-        username: senderUserRow.rows[0]?.username || "?",
+        username: senderUsername || "?",
         socketId: sender?.socketId || null,
         order: 0,
         isBot: false,
@@ -510,6 +546,26 @@ async function endMatchByConsensus(io: Server, room: RoomMemory) {
   setTimeout(() => rooms.delete(room.code), 60_000);
 }
 
+async function actuallyStartGame(io: Server, room: RoomMemory) {
+  const colors = shuffle([...ALL_COLORS]).slice(0, room.players.length);
+  room.players.forEach((p, i) => (p.color = colors[i]));
+  room.status = "PLAYING";
+  room.state = createInitialState(room.players.map((p) => ({ userId: p.userId, color: p.color!, order: p.order })));
+  room.turnStartedAt = Date.now();
+  room.startVotes.clear();
+
+  await pool.query("UPDATE rooms SET status = 'PLAYING', updated_at = now() WHERE code = $1", [room.code]);
+  const roomRow = await pool.query("SELECT id FROM rooms WHERE code = $1", [room.code]);
+  await pool.query(
+    "INSERT INTO games (room_id, game_type, status, current_turn, state, started_at) VALUES ($1, 'LUDO', 'PLAYING', 0, $2, now())",
+    [roomRow.rows[0].id, JSON.stringify(room.state)]
+  );
+  await Promise.all(room.players.filter((p) => !p.isBot).map((p) => setUserStatus(p.userId, "IN_GAME")));
+
+  io.to(room.code).emit("game:started", publicRoomView(room));
+  maybePlayBotTurn(io, room);
+}
+
 async function finalizeGame(room: RoomMemory) {
   if (!room.state) return;
   const winnerId = room.state.winnerUserId;
@@ -545,6 +601,7 @@ function handleLeave(io: Server, code: string, userId: string, abandon: boolean)
   const wasHost = room.hostId === userId;
   room.players = room.players.filter((p) => p.userId !== userId);
   room.players.forEach((p, i) => (p.order = i));
+  room.startVotes.delete(userId);
 
   if (room.players.filter((p) => !p.isBot).length === 0) {
     rooms.delete(code);
