@@ -1,5 +1,3 @@
-import crypto from "crypto";
-
 export type Color = "RED" | "GREEN" | "YELLOW" | "BLUE";
 export const ALL_COLORS: Color[] = ["RED", "GREEN", "YELLOW", "BLUE"];
 
@@ -49,37 +47,39 @@ export function createInitialState(players: { userId: string; color: Color; orde
   };
 }
 
-// Dado justo, gerado com crypto.randomInt — nunca confiar no cliente.
-export function rollDice(): number {
-  return crypto.randomInt(1, 7);
-}
-
 function absoluteIndex(color: Color, relative: number): number {
   return (START_INDEX[color] + relative) % 52;
-}
-
-function pieceAbsoluteTrackPos(piece: Piece): number | null {
-  if (piece.position < 0 || piece.position >= 100) return null;
-  return piece.position;
 }
 
 export function getMovablePieces(state: LudoState, color: Color, dice: number): string[] {
   const movable: string[] = [];
   for (const piece of state.pieces.filter((p) => p.color === color && !p.finished)) {
     if (piece.position === -1) {
-      if (dice === 6) movable.push(piece.id);
+      if (dice === 6) {
+        movable.push(piece.id);
+      }
       continue;
     }
     if (piece.position >= 100) {
       const homeOffset = piece.position - 100;
-      if (homeOffset + dice <= 5) movable.push(piece.id);
+      if (homeOffset + dice <= 5) {
+        movable.push(piece.id);
+      }
       continue;
     }
     // Peça no anel: verificar se dado a leva até ou além da chegada sem estourar
     const relative = (piece.position - START_INDEX[piece.color] + 52) % 52;
     const newRelative = relative + dice;
-    movable.push(piece.id); // sempre pode mover no anel (chegada tratada abaixo)
-    void newRelative;
+    const entryRelative = (ENTRY_INDEX[piece.color] - START_INDEX[piece.color] + 52) % 52;
+
+    if (relative <= entryRelative && newRelative > entryRelative) {
+      const homeOffset = newRelative - entryRelative - 1;
+      if (homeOffset <= 5) {
+        movable.push(piece.id);
+      }
+    } else {
+      movable.push(piece.id);
+    }
   }
   return movable;
 }
@@ -114,23 +114,25 @@ export function applyMove(state: LudoState, pieceId: string, dice: number): Move
     const relative = (piece.position - START_INDEX[piece.color] + 52) % 52;
     const newRelative = relative + dice;
     const entryRelative = (ENTRY_INDEX[piece.color] - START_INDEX[piece.color] + 52) % 52;
-    if (newRelative > entryRelative + 6) throw new Error("Movimento inválido");
-    if (newRelative > entryRelative) {
+
+    if (relative <= entryRelative && newRelative > entryRelative) {
       const homeOffset = newRelative - entryRelative - 1;
+      if (homeOffset > 5) throw new Error("Movimento inválido para a reta final");
       piece.position = 100 + homeOffset;
       if (homeOffset === 5) {
         piece.finished = true;
         finished = true;
       }
     } else {
-      piece.position = absoluteIndex(piece.color, newRelative);
-      // captura: qualquer peça adversária na mesma casa (fora de casa segura) volta à base
-      if (!SAFE_SQUARES.has(piece.position)) {
-        for (const other of state.pieces) {
-          if (other.color !== piece.color && !other.finished && other.position === piece.position) {
-            other.position = -1;
-            captured.push(other.id);
-          }
+      piece.position = (piece.position + dice) % 52;
+    }
+
+    // captura: qualquer peça adversária na mesma casa (fora de casa segura) volta à base
+    if (!SAFE_SQUARES.has(piece.position)) {
+      for (const other of state.pieces) {
+        if (other.color !== piece.color && !other.finished && other.position === piece.position) {
+          other.position = -1;
+          captured.push(other.id);
         }
       }
     }

@@ -51,7 +51,13 @@ export default function LudoPage() {
   }, [room?.state?.diceRolledThisTurn]);
 
   useEffect(() => {
-    if (room?.status === "FINISHED") setShowEndCard(false);
+    if (room?.status === "FINISHED") {
+      setShowEndCard(false);
+      const timer = setTimeout(() => {
+        handleLeaveAndNav();
+      }, 10000); // 10 segundos
+      return () => clearTimeout(timer);
+    }
   }, [room?.status]);
 
   async function handleJoinByCode() {
@@ -59,6 +65,20 @@ export default function LudoPage() {
     setJoining(true);
     await joinRoom(joinCode.trim().toUpperCase());
     setJoining(false);
+  }
+
+  function handleLeaveAndNav() {
+    if (room) {
+      leaveRoom(room.code);
+    }
+    navigate('/');
+  }
+
+  function handleDestroyAndNav() {
+    if (room) {
+      destroyRoom(room.code);
+    }
+    navigate('/');
   }
 
   if (!room) {
@@ -212,14 +232,14 @@ export default function LudoPage() {
 
             {isHost ? (
               <button
-                onClick={async () => { await destroyRoom(room.code); navigate("/"); }}
+                onClick={handleDestroyAndNav}
                 className="text-xs text-white/40 hover:text-red-400 transition mt-2"
               >
                 Cancelar sala
               </button>
             ) : (
               <button
-                onClick={async () => { await leaveRoom(room.code); navigate("/"); }}
+                onClick={handleLeaveAndNav}
                 className="text-xs text-white/40 hover:text-red-400 transition mt-2"
               >
                 Sair da sala
@@ -239,13 +259,12 @@ export default function LudoPage() {
 
   const humanPlayers = room.players.filter((p) => !p.isBot);
   const votes = room.endVotes || [];
-  const iVoted = votes.includes(user?.id || "");
 
   return (
     <div
       className="min-h-[calc(100vh-56px)] transition-[background] duration-700"
       style={{
-        background: currentColor
+        background: currentColor && room.status !== 'FINISHED'
           ? `radial-gradient(ellipse at 50% 0%, ${GLOW[currentColor]}, transparent 60%), var(--color-bg)`
           : "var(--color-bg)",
       }}
@@ -259,20 +278,16 @@ export default function LudoPage() {
         )}
         {errorMsg && <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-lg px-3 py-2 mb-4">{errorMsg}</div>}
 
-        {winner && room.status !== "FINISHED" && (
-          <div className="bg-white text-black rounded-2xl p-4 mb-4 text-center font-semibold">
-            🏆 {room.players.find((p) => p.userId === winner)?.username} venceu a partida!
-            <button onClick={async () => { await leaveRoom(room.code); navigate("/"); }} className="block mx-auto mt-2 text-xs underline">
-              Voltar ao início
-            </button>
-          </div>
-        )}
-
-        {room.status === "FINISHED" && !winner && (
+        {room.status === "FINISHED" && (
           <div className="bg-surface border border-border rounded-2xl p-4 mb-4 text-center">
-            <p className="text-white/80 text-sm font-medium">Partida encerrada por acordo entre os jogadores.</p>
-            <button onClick={async () => { await leaveRoom(room.code); navigate("/"); }} className="block mx-auto mt-2 text-xs underline text-white/50">
-              Voltar ao início
+            {winner ? (
+              <p className="text-white font-semibold">🏆 {room.players.find((p) => p.userId === winner)?.username} venceu a partida!</p>
+            ) : (
+              <p className="text-white/80 text-sm font-medium">Partida encerrada por acordo entre os jogadores.</p>
+            )}
+            <p className="text-xs text-white/50 mt-1">Você será redirecionado em breve...</p>
+            <button onClick={handleLeaveAndNav} className="block mx-auto mt-2 text-xs underline">
+              Sair agora
             </button>
           </div>
         )}
@@ -312,9 +327,9 @@ export default function LudoPage() {
                 Encerrar partida
               </button>
             )}
-            {room.status !== "PLAYING" && room.status !== "PAUSED" && (
+            {room.status === "FINISHED" && (
               <button
-                onClick={async () => { await leaveRoom(room.code); navigate("/"); }}
+                onClick={handleLeaveAndNav}
                 className="text-xs px-3 py-1.5 rounded-full border border-border text-white/50 hover:text-red-400 hover:border-red-400/40 transition"
               >
                 Sair

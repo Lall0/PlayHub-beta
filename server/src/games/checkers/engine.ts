@@ -105,17 +105,16 @@ export interface CheckersMoveOption {
   fullPath: Square[];
 }
 
-// Lista todos os movimentos legais do jogador atual, respeitando a captura obrigatória
-// e a regra de maior captura (se houver sequência que captura mais peças, as menores
-// ficam indisponíveis).
+// Lista todos os movimentos legais do jogador atual
 export function getLegalMoves(state: CheckersState, color: PieceColor): CheckersMoveOption[] {
   const myPieces = state.pieces.filter((p) => p.color === color);
-  const allCaptures: CheckersMoveOption[] = [];
+  const allMoves: CheckersMoveOption[] = [];
 
+  // Adiciona todos os movimentos de captura
   for (const piece of myPieces) {
     const seqs = findCaptureSequences(state, piece);
     for (const seq of seqs) {
-      allCaptures.push({
+      allMoves.push({
         pieceId: piece.id,
         destination: seq.path[seq.path.length - 1],
         captured: seq.captured,
@@ -124,13 +123,7 @@ export function getLegalMoves(state: CheckersState, color: PieceColor): Checkers
     }
   }
 
-  if (allCaptures.length > 0) {
-    const maxCaptures = Math.max(...allCaptures.map((c) => c.captured.length));
-    return allCaptures.filter((c) => c.captured.length === maxCaptures);
-  }
-
-  // sem capturas disponíveis: movimentos simples de uma casa (ou voo livre para damas)
-  const simpleMoves: CheckersMoveOption[] = [];
+  // Adiciona todos os movimentos simples
   for (const piece of myPieces) {
     const dirs = piece.king
       ? [[-1, -1], [-1, 1], [1, -1], [1, 1]]
@@ -143,7 +136,7 @@ export function getLegalMoves(state: CheckersState, color: PieceColor): Checkers
         let r = piece.row + dr;
         let c = piece.col + dc;
         while (inBounds(r, c) && !pieceAt(state, r, c)) {
-          simpleMoves.push({ pieceId: piece.id, destination: { row: r, col: c }, captured: [], fullPath: [{ row: r, col: c }] });
+          allMoves.push({ pieceId: piece.id, destination: { row: r, col: c }, captured: [], fullPath: [{ row: r, col: c }] });
           r += dr;
           c += dc;
         }
@@ -151,12 +144,13 @@ export function getLegalMoves(state: CheckersState, color: PieceColor): Checkers
         const r = piece.row + dr;
         const c = piece.col + dc;
         if (inBounds(r, c) && !pieceAt(state, r, c)) {
-          simpleMoves.push({ pieceId: piece.id, destination: { row: r, col: c }, captured: [], fullPath: [{ row: r, col: c }] });
+          allMoves.push({ pieceId: piece.id, destination: { row: r, col: c }, captured: [], fullPath: [{ row: r, col: c }] });
         }
       }
     }
   }
-  return simpleMoves;
+
+  return allMoves;
 }
 
 export interface CheckersMoveResult {
@@ -172,7 +166,7 @@ export function applyCheckersMove(state: CheckersState, pieceId: string, destina
   const color = piece.color;
   const legalMoves = getLegalMoves(state, color);
   const chosen = legalMoves.find((m) => m.pieceId === pieceId && m.destination.row === destination.row && m.destination.col === destination.col);
-  if (!chosen) throw new Error("Movimento inválido — verifique se há captura obrigatória disponível");
+  if (!chosen) throw new Error("Movimento inválido");
 
   let pieces = state.pieces.filter((p) => !chosen.captured.includes(p.id));
   pieces = pieces.map((p) => (p.id === pieceId ? { ...p, row: destination.row, col: destination.col } : p));

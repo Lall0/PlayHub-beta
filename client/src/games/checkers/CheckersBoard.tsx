@@ -25,6 +25,7 @@ const CELL = 56;
 const SIZE = CELL * 8;
 
 export default function CheckersBoard({ pieces, myColor, selectedPieceId, legalDestinations, onSelectPiece, onMoveTo }: Props) {
+  const shouldRotate = myColor === "DARK";
   const squares = [];
   for (let row = 0; row < 8; row++) {
     for (let col = 0; col < 8; col++) {
@@ -43,7 +44,11 @@ export default function CheckersBoard({ pieces, myColor, selectedPieceId, legalD
   }
 
   return (
-    <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full max-w-[520px] max-h-[520px] mx-auto select-none">
+    <svg
+      viewBox={`0 0 ${SIZE} ${SIZE}`}
+      className="w-full h-full max-w-[520px] max-h-[520px] mx-auto select-none"
+      style={{ transform: shouldRotate ? "rotate(180deg)" : undefined }}
+    >
       {squares}
 
       {/* destinos legais: captura em destaque diferente (vermelho) de movimento simples (verde) */}
@@ -70,10 +75,11 @@ export default function CheckersBoard({ pieces, myColor, selectedPieceId, legalD
       {pieces.map((p) => {
         const isSelected = p.id === selectedPieceId;
         const isMine = p.color === myColor;
+        const pieceTransform = `translate(${p.col * CELL + CELL / 2},${p.row * CELL + CELL / 2}) ${shouldRotate ? "rotate(-180)" : ""}`;
         return (
           <g
             key={p.id}
-            transform={`translate(${p.col * CELL + CELL / 2},${p.row * CELL + CELL / 2})`}
+            transform={pieceTransform}
             onClick={() => isMine && onSelectPiece(p.id)}
             style={{ cursor: isMine ? "pointer" : "default" }}
           >

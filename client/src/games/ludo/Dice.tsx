@@ -13,13 +13,10 @@ export default function Dice({ value, rolling, canRoll, onRoll }: { value: numbe
   const [display, setDisplay] = useState(value || 1);
 
   useEffect(() => {
-    if (!rolling) {
-      if (value) setDisplay(value);
-      return;
+    if (value) {
+      setDisplay(value);
     }
-    const interval = setInterval(() => setDisplay(1 + Math.floor(Math.random() * 6)), 80);
-    return () => clearInterval(interval);
-  }, [rolling, value]);
+  }, [value]);
 
   return (
     <button

@@ -4,7 +4,6 @@ import { getUsernameCached } from "../db/userCache";
 import { verifyToken } from "../middleware/auth";
 import {
   createInitialState,
-  rollDice,
   applyMove,
   advanceTurn,
   getMovablePieces,
@@ -476,7 +475,7 @@ function performDiceRoll(io: Server, room: RoomMemory) {
   const current = room.state.players[room.state.currentTurn];
   if (room.state.diceRolledThisTurn) return;
 
-  const dice = rollDice();
+  const dice = Math.floor(Math.random() * 6) + 1;
   room.state.diceValue = dice;
   room.state.diceRolledThisTurn = true;
   const movable = getMovablePieces(room.state, current.color, dice);
