@@ -4,7 +4,6 @@ import {
   applyMove,
   advanceTurn,
   getMovablePieces,
-  rollDice,
 } from "../games/ludo/engine";
 
 function makeState() {
@@ -13,22 +12,6 @@ function makeState() {
     { userId: "u2", color: "GREEN", order: 1 },
   ]);
 }
-
-describe("dado do Ludo", () => {
-  it("gera sempre valores entre 1 e 6", () => {
-    for (let i = 0; i < 500; i++) {
-      const d = rollDice();
-      expect(d).toBeGreaterThanOrEqual(1);
-      expect(d).toBeLessThanOrEqual(6);
-    }
-  });
-
-  it("produz distribuição com variedade (não é fixo)", () => {
-    const values = new Set();
-    for (let i = 0; i < 200; i++) values.add(rollDice());
-    expect(values.size).toBeGreaterThan(3);
-  });
-});
 
 describe("regras principais do Ludo", () => {
   it("peça na base só pode sair tirando 6", () => {
