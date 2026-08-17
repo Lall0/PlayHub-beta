@@ -176,8 +176,6 @@ export function registerChessSockets(io: Server) {
 
       room.startVotes.clear();
 
-      // Cara ou coroa: decide quem joga de brancas. A decisão é do servidor —
-      // o cliente só recebe o resultado e anima.
       const flipResult: "CARA" | "COROA" = Math.random() < 0.5 ? "CARA" : "COROA";
       const winnerIndex = flipResult === "CARA" ? 0 : 1;
       const winnerUserId = room.players[winnerIndex].userId;
@@ -186,7 +184,6 @@ export function registerChessSockets(io: Server) {
       nsp.to(data.code).emit("game:coinFlip", { result: flipResult, winnerUserId });
       ok(callback, { waiting: false });
 
-      // Aguarda a animação da moeda no cliente antes de começar a partida de verdade
       setTimeout(async () => {
         const colors: PieceColor[] = winnerUserId === room.players[0].userId ? ["WHITE", "BLACK"] : ["BLACK", "WHITE"];
         room.players.forEach((p, i) => (p.color = colors[i]));
@@ -268,9 +265,10 @@ export function registerChessSockets(io: Server) {
 
           const result = applyChessMove(room.state, from, to, promotion || "Q");
           room.state = result.state;
-          room.turnStartedAt = Date.now();
 
-          if (result.isCheckmate || result.state.status === "DRAW" || result.isStalemate) {
+          const gameEnded = result.isCheckmate || result.state.status === "DRAW" || result.isStalemate;
+
+          if (gameEnded) {
             room.status = "FINISHED";
             finalizeChessGame(room, room.state.winnerUserId);
             nsp.to(code).emit("game:finished", {
@@ -279,11 +277,11 @@ export function registerChessSockets(io: Server) {
               state: room.state,
               clockMs: room.clockMs,
             });
-            return;
+          } else {
+            advanceChessTurn(room.state);
+            room.turnStartedAt = Date.now();
+            nsp.to(code).emit("game:state", publicView(room));
           }
-
-          advanceChessTurn(room.state);
-          nsp.to(code).emit("game:state", publicView(room));
         } catch (err: any) {
           socket.emit("error:message", err.message || "Movimento inválido");
         }

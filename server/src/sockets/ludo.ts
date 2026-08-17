@@ -122,9 +122,6 @@ export function registerLudoSockets(io: Server) {
       socket.emit("rooms:list", list);
     });
 
-    // --- Criar sala: sempre com o máximo de 4 (limite do tabuleiro de Ludo).
-    // Não há mais um número fixo escolhido na criação — as pessoas vão entrando
-    // livremente e qualquer participante decide quando propor o início. ---
     socket.on("room:create", async (_data: any, callback?: Function) => {
       try {
         const mp = 4;
@@ -155,7 +152,6 @@ export function registerLudoSockets(io: Server) {
       }
     });
 
-    // --- Entrar em sala por código: agora com ack ---
     socket.on("room:join", ({ code }: { code: string }, callback?: Function) => {
       const room = rooms.get((code || "").trim().toUpperCase());
       if (!room) {
@@ -188,7 +184,6 @@ export function registerLudoSockets(io: Server) {
       ok(callback, { room: view });
     });
 
-    // --- Adicionar bot (só o anfitrião, sala em espera) ---
     socket.on("room:addBot", ({ code }: { code: string }, callback?: Function) => {
       const room = rooms.get(code);
       if (!room) return fail(callback, "Sala inexistente");
@@ -220,9 +215,6 @@ export function registerLudoSockets(io: Server) {
       ok(callback);
     });
 
-    // --- Iniciar partida por consenso: qualquer jogador (não só o anfitrião) pode
-    // propor. A partida só começa de verdade quando todos os jogadores humanos
-    // presentes confirmarem (bots contam automaticamente como "prontos"). ---
     socket.on("room:start", async ({ code }: { code: string }, callback?: Function) => {
       const room = rooms.get(code);
       if (!room) return fail(callback, "Sala inexistente");
@@ -288,9 +280,6 @@ export function registerLudoSockets(io: Server) {
       maybePlayBotTurn(io, room);
     });
 
-    // --- Feature 3.1: sair/cancelar sala ---
-    // --- Encerrar partida: por consenso de todos os jogadores humanos, ou o
-    // anfitrião pode forçar o encerramento imediatamente (equivalente a cancelar) ---
     socket.on("game:requestEnd", ({ code }: { code: string }, callback?: Function) => {
       const room = rooms.get(code);
       if (!room || room.status !== "PLAYING" && room.status !== "PAUSED") return fail(callback, "Não há partida em andamento");
@@ -316,7 +305,6 @@ export function registerLudoSockets(io: Server) {
       ok(callback);
     });
 
-    // Anfitrião força o encerramento imediato, sem precisar de consenso
     socket.on("game:forceEnd", ({ code }: { code: string }, callback?: Function) => {
       const room = rooms.get(code);
       if (!room) return fail(callback, "Sala inexistente");
@@ -342,105 +330,6 @@ export function registerLudoSockets(io: Server) {
       ok(callback);
     });
 
-    socket.on("invite:send", async ({ toUserId }: { toUserId: string }) => {
-      const target = onlineUsers.get(toUserId);
-      if (!target) return socket.emit("error:message", "Jogador não está online");
-
-      const expiresAt = new Date(Date.now() + 60_000).toISOString();
-      let inviteId: string;
-      try {
-        const result = await pool.query(
-          "INSERT INTO invitations (sender_id, receiver_id, game_type, status, expires_at) VALUES ($1, $2, 'LUDO', 'PENDING', $3) RETURNING id",
-          [userId, toUserId, expiresAt]
-        );
-        inviteId = result.rows[0].id;
-      } catch (err) {
-        console.error("Erro ao criar convite:", err);
-        return socket.emit("error:message", "Erro ao enviar convite");
-      }
-
-      io.to(target.socketId).emit("invite:received", {
-        inviteId,
-        fromUserId: userId,
-        fromUsername: user.username,
-        gameType: "LUDO",
-        expiresAt,
-      });
-      socket.emit("invite:sent", { inviteId, toUserId });
-
-      setTimeout(async () => {
-        try {
-          const row = await pool.query("SELECT status FROM invitations WHERE id = $1", [inviteId]);
-          if (row.rows[0]?.status === "PENDING") {
-            await pool.query("UPDATE invitations SET status = 'EXPIRED' WHERE id = $1", [inviteId]);
-            io.to(target.socketId).emit("invite:expired", { inviteId });
-            socket.emit("invite:expired", { inviteId });
-          }
-        } catch (err) {
-          console.error("Erro ao expirar convite:", err);
-        }
-      }, 60_000);
-    });
-
-    socket.on("invite:accept", async ({ inviteId }: { inviteId: string }) => {
-      const inviteResult = await pool.query("SELECT * FROM invitations WHERE id = $1", [inviteId]);
-      const invite = inviteResult.rows[0];
-      if (!invite || invite.status !== "PENDING") return socket.emit("error:message", "Convite expirado ou inválido");
-      if (invite.receiver_id !== userId) return;
-      if (new Date(invite.expires_at).getTime() < Date.now()) {
-        await pool.query("UPDATE invitations SET status = 'EXPIRED' WHERE id = $1", [inviteId]);
-        return socket.emit("error:message", "Convite expirado");
-      }
-
-      const code = genCode();
-      const room: RoomMemory = {
-        code,
-        hostId: invite.sender_id,
-        maxPlayers: 4,
-        status: "WAITING",
-        players: [],
-        endVotes: new Set(),
-        startVotes: new Set(),
-        createdAt: Date.now(),
-      };
-      const sender = onlineUsers.get(invite.sender_id);
-      const senderUsername = await getUsernameCached(invite.sender_id);
-      room.players.push({
-        userId: invite.sender_id,
-        username: senderUsername || "?",
-        socketId: sender?.socketId || null,
-        order: 0,
-        isBot: false,
-      });
-      room.players.push({ userId, username: user.username, socketId: socket.id, order: 1, isBot: false });
-      rooms.set(code, room);
-
-      try {
-        await pool.query(
-          "INSERT INTO rooms (code, game_type, host_id, status, max_players) VALUES ($1, 'LUDO', $2, 'WAITING', 2)",
-          [code, invite.sender_id]
-        );
-        await pool.query("UPDATE invitations SET status = 'ACCEPTED', room_code = $1 WHERE id = $2", [code, inviteId]);
-      } catch (err) {
-        console.error("Erro ao aceitar convite:", err);
-      }
-
-      socket.join(code);
-      if (sender?.socketId) io.sockets.sockets.get(sender.socketId)?.join(code);
-
-      io.to(code).emit("invite:accepted", publicRoomView(room));
-      io.emit("rooms:updated");
-    });
-
-    socket.on("invite:decline", async ({ inviteId }: { inviteId: string }) => {
-      const inviteResult = await pool.query("SELECT * FROM invitations WHERE id = $1", [inviteId]);
-      const invite = inviteResult.rows[0];
-      if (!invite || invite.receiver_id !== userId) return;
-      await pool.query("UPDATE invitations SET status = 'DECLINED' WHERE id = $1", [inviteId]);
-      const sender = onlineUsers.get(invite.sender_id);
-      if (sender) io.to(sender.socketId).emit("invite:declined", { inviteId });
-    });
-
     socket.on("disconnect", async () => {
       onlineUsers.delete(userId);
       await setUserStatus(userId, "OFFLINE");
@@ -457,7 +346,6 @@ export function registerLudoSockets(io: Server) {
   });
 }
 
-// --- IA simples para os bots: rola o dado e escolhe uma peça movível automaticamente ---
 function maybePlayBotTurn(io: Server, room: RoomMemory) {
   if (!room.state || room.status !== "PLAYING") return;
   const current = room.state.players[room.state.currentTurn];
@@ -494,7 +382,6 @@ function performDiceRoll(io: Server, room: RoomMemory) {
   }
 
   if (slot?.isBot) {
-    // Bot escolhe automaticamente: prioriza capturar/tirar peça da base, senão a primeira movível
     setTimeout(() => {
       const chosen = movable[Math.floor(Math.random() * movable.length)];
       performMove(io, room, chosen);
