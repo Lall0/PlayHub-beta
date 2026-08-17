@@ -124,10 +124,19 @@ export default function ChessPage() {
     if (!room?.state) return;
     const piece = room.state.board[row][col];
     const myPlayer = room.players.find((p) => p.userId === user?.id);
-    if (!piece || piece.color !== myPlayer?.color) return;
-    setSelected({ row, col });
-    socketRef.current?.emit("game:legalMoves", { code: room.code, row, col });
+
+    if (selected && selected.row === row && selected.col === col) {
+      setSelected(null);
+      setLegalDestinations([]);
+      return;
+    }
+
+    if (piece && piece.color === myPlayer?.color) {
+      setSelected({ row, col });
+      socketRef.current?.emit("game:legalMoves", { code: room.code, row, col });
+    }
   }
+
   function moveTo(row: number, col: number) {
     if (!selected || !room) return;
     socketRef.current?.emit("game:move", { code: room.code, from: selected, to: { row, col } });
