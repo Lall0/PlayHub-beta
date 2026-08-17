@@ -125,22 +125,18 @@ export default function ChessPage() {
     const piece = room.state.board[row][col];
     const myPlayer = room.players.find((p) => p.userId === user?.id);
 
-    // Se clicar na mesma peça selecionada, deseleciona
     if (selected && selected.row === row && selected.col === col) {
       setSelected(null);
       setLegalDestinations([]);
       return;
     }
 
-    // Se clicar em uma peça da própria cor, seleciona-a (sobrescreve a seleção anterior)
     if (piece && piece.color === myPlayer?.color) {
       setSelected({ row, col });
       socketRef.current?.emit("game:legalMoves", { code: room.code, row, col });
-      return; // Importante para não tentar mover se a intenção é apenas selecionar
+      return;
     }
 
-    // Se houver uma peça selecionada e o clique não for em uma peça da própria cor,
-    // tenta mover para a casa clicada
     if (selected) {
       moveTo(row, col);
     }
@@ -148,6 +144,20 @@ export default function ChessPage() {
 
   function moveTo(row: number, col: number) {
     if (!selected || !room) return;
+
+    // SOLUÇÃO DO XADREZ: Interceptando a chamada errada do tabuleiro!
+    // Se o clique caiu aqui, mas o jogador clicou numa peça PRÓPRIA,
+    // nós fazemos a troca de seleção em vez de tentar realizar um movimento fantasma.
+    const piece = room.state.board[row][col];
+    const myPlayer = room.players.find((p) => p.userId === user?.id);
+
+    if (piece && piece.color === myPlayer?.color) {
+      setSelected({ row, col });
+      socketRef.current?.emit("game:legalMoves", { code: room.code, row, col });
+      return;
+    }
+
+    // Se não for uma peça própria, emite o movimento normalmente
     socketRef.current?.emit("game:move", { code: room.code, from: selected, to: { row, col } });
   }
 

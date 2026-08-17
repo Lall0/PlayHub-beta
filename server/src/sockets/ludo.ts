@@ -1,5 +1,5 @@
 import { Server, Socket } from "socket.io";
-import crypto from "crypto"; // Importar crypto
+import crypto from "crypto";
 import { pool, uuid } from "../db";
 import { getUsernameCached } from "../db/userCache";
 import { verifyToken } from "../middleware/auth";
@@ -30,8 +30,8 @@ interface RoomMemory {
   players: PlayerSlot[];
   state?: LudoState;
   turnStartedAt?: number;
-  endVotes: Set<string>; // userIds que confirmaram encerrar a partida por consenso
-  startVotes: Set<string>; // userIds que confirmaram iniciar a partida por consenso
+  endVotes: Set<string>;
+  startVotes: Set<string>;
   createdAt: number;
 }
 
@@ -78,8 +78,6 @@ function fail(cb: Function | undefined, error: string) {
 }
 
 export function registerLudoSockets(io: Server) {
-  // Sala criada e ninguém propõe iniciar em 2 minutos: cancela sozinha e some da
-  // lista de salas abertas, para não acumular lixo no lobby.
   setInterval(() => {
     const now = Date.now();
     for (const room of rooms.values()) {
@@ -364,10 +362,14 @@ function performDiceRoll(io: Server, room: RoomMemory) {
   const current = room.state.players[room.state.currentTurn];
   if (room.state.diceRolledThisTurn) return;
 
-  const dice = crypto.randomInt(1, 7); // Usando crypto.randomInt para melhor aleatoriedade
-  console.log('Dado rolado:', dice); // Adicionado para depuração
+  const dice = crypto.randomInt(1, 7);
+  console.log('Dado rolado:', dice);
   room.state.diceValue = dice;
   room.state.diceRolledThisTurn = true;
+
+  // SOLUÇÃO DO LUDO: Forçando o envio do estado global para destravar o frontend!
+  io.to(room.code).emit("game:state", publicRoomView(room));
+
   const movable = getMovablePieces(room.state, current.color, dice);
   io.to(room.code).emit("game:diceRolled", { userId: current.userId, dice, movablePieces: movable });
 
