@@ -18,11 +18,11 @@ export const COLOR_DARK: Record<Color, string> = {
 };
 
 // Caminho externo: 52 células, coordenadas de grid (col,row) em unidades de 15x15.
-// Gerado seguindo o padrão clássico de Ludo, começando na saída vermelha.
+// Gerado seguindo o padrão clássico Retro, começando na saída vermelha exata.
 export function buildTrackCells(): { x: number; y: number }[] {
   const cells: { x: number; y: number }[] = [];
-  // braço esquerdo indo para a direita (linha 6, colunas 0-5)
-  for (let c = 0; c <= 5; c++) cells.push({ x: c, y: 6 });
+  // braço esquerdo indo para a direita (linha 6, colunas 1-5) - Começa no quadrado retro!
+  for (let c = 1; c <= 5; c++) cells.push({ x: c, y: 6 });
   // sobe na coluna 6 (linhas 5 a 0)
   for (let r = 5; r >= 0; r--) cells.push({ x: 6, y: r });
   cells.push({ x: 7, y: 0 });
@@ -41,12 +41,14 @@ export function buildTrackCells(): { x: number; y: number }[] {
   // braço esquerdo (linha 8, colunas 5-0)
   for (let c = 5; c >= 0; c--) cells.push({ x: c, y: 8 });
   cells.push({ x: 0, y: 7 });
-  return cells; // 52 células, índice 0 = início do vermelho
+  // Finaliza o braço esquerdo conectando na quina para fechar o loop
+  cells.push({ x: 0, y: 6 });
+  return cells; // 52 células perfeitas
 }
 
 export const TRACK_CELLS = buildTrackCells();
 
-// Casas de saída (start) e casas seguras (marcadas com estrela)
+// As posições matematicamente perfeitas do Ludo Retro para saídas e estrelas
 export const SAFE_TRACK_INDEXES = [0, 8, 13, 21, 26, 34, 39, 47];
 
 // Corredor final de cada cor: 5 células levando ao centro

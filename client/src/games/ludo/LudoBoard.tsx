@@ -27,9 +27,8 @@ function pieceScreenPos(piece: Piece, order: number): { x: number; y: number } {
     return { x: (cell.x + 0.5) * CELL, y: (cell.y + 0.5) * CELL };
   }
   const cell = TRACK_CELLS[piece.position];
-  // pequeno deslocamento para não empilhar peças exatamente no centro da casa
-  const offset = (order % 4) * 5 - 7;
-  return { x: (cell.x + 0.5) * CELL + offset, y: (cell.y + 0.5) * CELL + offset };
+  // SOLUÇÃO: Offset removido! Agora a peça mira estritamente no centro da célula (+0.5)
+  return { x: (cell.x + 0.5) * CELL, y: (cell.y + 0.5) * CELL };
 }
 
 export default function LudoBoard({ state, myColor, movablePieces, onMovePiece }: Props) {
@@ -54,7 +53,7 @@ export default function LudoBoard({ state, myColor, movablePieces, onMovePiece }
       <rect x={0} y={0} width={BOARD_SIZE} height={BOARD_SIZE} fill="url(#boardBg)" rx={16} />
       <rect x={1} y={1} width={BOARD_SIZE - 2} height={BOARD_SIZE - 2} fill="none" stroke="#00000014" strokeWidth={2} rx={15} />
 
-      {/* Quadrantes coloridos dos cantos, com 4 casas-base cada */}
+      {/* Quadrantes coloridos dos cantos */}
       {corners.map((c) => (
         <g key={c.color}>
           <rect x={c.x * CELL} y={c.y * CELL} width={6 * CELL} height={6 * CELL} fill={COLOR_HEX[c.color]} opacity={0.18} />
@@ -65,22 +64,37 @@ export default function LudoBoard({ state, myColor, movablePieces, onMovePiece }
         </g>
       ))}
 
-      {/* Caminho externo (52 células) */}
+      {/* Caminho externo (52 células) com as saídas coloridas retrô */}
       {TRACK_CELLS.map((cell, i) => {
         const isSafe = SAFE_TRACK_INDEXES.includes(i);
+
+        // Cores das casas de saída (0=Red, 13=Green, 26=Yellow, 39=Blue)
+        let startColor = undefined;
+        if (i === 0) startColor = COLOR_HEX.RED;
+        else if (i === 13) startColor = COLOR_HEX.GREEN;
+        else if (i === 26) startColor = COLOR_HEX.YELLOW;
+        else if (i === 39) startColor = COLOR_HEX.BLUE;
+
         return (
-          <rect
-            key={i}
-            x={cell.x * CELL}
-            y={cell.y * CELL}
-            width={CELL}
-            height={CELL}
-            fill={isSafe ? "#fff8e1" : "#ffffff"}
-            stroke="#d8d2c4"
-            strokeWidth={1}
-          />
+          <g key={i}>
+            <rect
+              x={cell.x * CELL}
+              y={cell.y * CELL}
+              width={CELL}
+              height={CELL}
+              fill={isSafe && !startColor ? "#fff8e1" : "#ffffff"}
+              stroke="#d8d2c4"
+              strokeWidth={1}
+            />
+            {/* Sombreamento retro para a casa de saída */}
+            {startColor && (
+              <rect x={cell.x * CELL} y={cell.y * CELL} width={CELL} height={CELL} fill={startColor} opacity={0.25} />
+            )}
+          </g>
         );
       })}
+
+      {/* Desenha as estrelas nas casas seguras */}
       {SAFE_TRACK_INDEXES.map((i) => {
         const cell = TRACK_CELLS[i];
         return (
@@ -97,7 +111,7 @@ export default function LudoBoard({ state, myColor, movablePieces, onMovePiece }
         ))
       )}
 
-      {/* Centro (4 triângulos coloridos convergindo) */}
+      {/* Centro */}
       <g transform={`translate(${6 * CELL},${6 * CELL})`}>
         <polygon points={`0,0 ${1.5 * CELL},${1.5 * CELL} 0,${3 * CELL}`} fill={COLOR_HEX.RED} />
         <polygon points={`0,0 ${1.5 * CELL},${1.5 * CELL} ${3 * CELL},0`} fill={COLOR_HEX.GREEN} />
@@ -105,7 +119,7 @@ export default function LudoBoard({ state, myColor, movablePieces, onMovePiece }
         <polygon points={`0,${3 * CELL} ${1.5 * CELL},${1.5 * CELL} ${3 * CELL},${3 * CELL}`} fill={COLOR_HEX.BLUE} />
       </g>
 
-      {/* Peças */}
+      {/* Peças perfeitamente centralizadas */}
       {state.pieces.map((piece, order) => {
         if (piece.finished) return null;
         const pos = pieceScreenPos(piece, order);
