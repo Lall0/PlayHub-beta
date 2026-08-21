@@ -20,6 +20,7 @@ interface RoomView {
   clockMs?: Record<string, number>;
   turnStartedAt?: number;
   coinFlip?: { result: "CARA" | "COROA"; winnerUserId: string };
+  hasTimer?: boolean; // <-- PROPRIEDADE ADICIONADA AQUI
 }
 
 export default function CheckersPage() {
@@ -28,6 +29,7 @@ export default function CheckersPage() {
   const socketRef = useRef<Socket | null>(null);
   const [room, setRoom] = useState<RoomView | null>(null);
   const [joinCode, setJoinCode] = useState("");
+  const [hasTimer, setHasTimer] = useState(true); // <-- ESTADO ADICIONADO AQUI
   const [error, setError] = useState<string | null>(null);
   const [selectedPieceId, setSelectedPieceId] = useState<string | null>(null);
   const [legalDestinations, setLegalDestinations] = useState<{ row: number; col: number; captured?: string[] }[]>([]);
@@ -83,7 +85,8 @@ export default function CheckersPage() {
   }
 
   async function createRoom() {
-    try { const ack = await emitAck("room:create", {}); setRoom(ack.room); } catch (e: any) { setError(e.message); }
+    // <-- ENVIO DO HASTIMER PARA O BACKEND ADICIONADO AQUI
+    try { const ack = await emitAck("room:create", { hasTimer }); setRoom(ack.room); } catch (e: any) { setError(e.message); }
   }
   async function joinRoom() {
     if (!joinCode.trim()) return;
@@ -140,6 +143,18 @@ export default function CheckersPage() {
           <p className="text-white/40 text-sm mb-6">Captura obrigatória, múltiplas capturas e promoção a dama.</p>
           {error && <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
           <div className="space-y-4">
+
+            {/* <-- COMPONENTE DO CHECKBOX ADICIONADO AQUI --> */}
+            <label className="flex items-center gap-2 text-white/70 text-sm justify-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasTimer}
+                onChange={(e) => setHasTimer(e.target.checked)}
+                className="w-4 h-4 accent-green-500"
+              />
+              Jogar com relógio (tempo)?
+            </label>
+
             <button onClick={createRoom} className="w-full bg-white text-black font-semibold rounded-lg py-2.5 text-sm hover:bg-white/90 transition">
               CRIAR SALA
             </button>
@@ -253,19 +268,22 @@ export default function CheckersPage() {
           <div className="text-center py-3 mb-4 bg-surface border border-border rounded-xl text-white/60 text-sm">PARTIDA PAUSADA</div>
         )}
 
-        <div className="flex justify-center gap-3 mb-4">
-          {room.players.map((p) => (
-            <ClockDisplay
-              key={p.userId}
-              clockMs={room.clockMs}
-              turnStartedAt={room.turnStartedAt}
-              userId={p.userId}
-              isCurrentTurn={p.userId === currentPlayer?.userId}
-              active={room.status === "PLAYING"}
-              label={p.username}
-            />
-          ))}
-        </div>
+        {/* <-- CONDIÇÃO DO RELÓGIO ADICIONADA AQUI --> */}
+        {room.hasTimer && (
+          <div className="flex justify-center gap-3 mb-4">
+            {room.players.map((p) => (
+              <ClockDisplay
+                key={p.userId}
+                clockMs={room.clockMs}
+                turnStartedAt={room.turnStartedAt}
+                userId={p.userId}
+                isCurrentTurn={p.userId === currentPlayer?.userId}
+                active={room.status === "PLAYING"}
+                label={p.username}
+              />
+            ))}
+          </div>
+        )}
 
         <div className="bg-surface border border-border rounded-2xl p-4">
           <CheckersBoard

@@ -25,6 +25,7 @@ interface ChessRoom {
   turnStartedAt: number;
   clockInitialMs: number;
   coinFlip?: { result: "CARA" | "COROA"; winnerUserId: string };
+  hasTimer?: boolean; // <-- ADICIONADO: Propriedade do timer
 }
 
 const rooms = new Map<string, ChessRoom>();
@@ -52,6 +53,7 @@ function publicView(room: ChessRoom) {
     clockMs: room.clockMs,
     turnStartedAt: room.turnStartedAt,
     coinFlip: room.coinFlip,
+    hasTimer: room.hasTimer, // <-- ADICIONADO: Envia a config de volta pro front
   };
 }
 
@@ -93,7 +95,9 @@ export function registerChessSockets(io: Server) {
   // Verifica a cada segundo se algum jogador deixou o relógio zerar sem jogar
   setInterval(() => {
     for (const room of rooms.values()) {
-      if (room.status !== "PLAYING" || !room.state) continue;
+      // <-- ADICIONADO: Se a sala não tem timer, pula a contagem
+      if (room.status !== "PLAYING" || !room.state || !room.hasTimer) continue;
+
       const current = room.state.players[room.state.currentTurn];
       const base = room.clockMs[current.userId] ?? room.clockInitialMs;
       const remaining = base - (Date.now() - room.turnStartedAt);
@@ -120,8 +124,11 @@ export function registerChessSockets(io: Server) {
     const username = await getUsernameCached(userId).catch(() => null);
     if (!username) return socket.disconnect();
 
-    socket.on("room:create", (_data: any, callback?: Function) => {
+    // <-- ADICIONADO: Troquei _data para data
+    socket.on("room:create", (data: any, callback?: Function) => {
       const code = genCode();
+      const hasTimer = data?.hasTimer !== undefined ? data.hasTimer : true; // Pega do front
+
       const room: ChessRoom = {
         code,
         hostId: userId,
@@ -133,6 +140,7 @@ export function registerChessSockets(io: Server) {
         clockMs: {},
         turnStartedAt: 0,
         clockInitialMs: 10 * 60 * 1000,
+        hasTimer, // <-- Salva na sala
       };
       rooms.set(code, room);
       socket.join(code);
@@ -219,7 +227,12 @@ export function registerChessSockets(io: Server) {
       const room = rooms.get(code);
       if (!room || room.status !== "PLAYING" || !room.state) return fail(callback, "Não é possível pausar agora");
       const current = room.state.players[room.state.currentTurn];
-      room.clockMs[current.userId] = Math.max(0, (room.clockMs[current.userId] ?? room.clockInitialMs) - (Date.now() - room.turnStartedAt));
+
+      // <-- ADICIONADO: Só congela/desconta o tempo se tiver timer
+      if (room.hasTimer) {
+        room.clockMs[current.userId] = Math.max(0, (room.clockMs[current.userId] ?? room.clockInitialMs) - (Date.now() - room.turnStartedAt));
+      }
+
       room.status = "PAUSED";
       nsp.to(code).emit("game:paused", publicView(room));
       ok(callback);
@@ -251,16 +264,19 @@ export function registerChessSockets(io: Server) {
         if (current.userId !== userId) return socket.emit("error:message", "Não é o seu turno");
 
         try {
-          if (!room.clockMs[current.userId]) room.clockMs[current.userId] = room.clockInitialMs;
-          const elapsed = Date.now() - room.turnStartedAt;
-          room.clockMs[current.userId] = Math.max(0, room.clockMs[current.userId] - elapsed);
+          // <-- ADICIONADO: Lógica de desconto de tempo condicionada ao hasTimer
+          if (room.hasTimer) {
+            if (!room.clockMs[current.userId]) room.clockMs[current.userId] = room.clockInitialMs;
+            const elapsed = Date.now() - room.turnStartedAt;
+            room.clockMs[current.userId] = Math.max(0, room.clockMs[current.userId] - elapsed);
 
-          if (room.clockMs[current.userId] <= 0) {
-            room.status = "FINISHED";
-            const winnerUserId = room.players.find((p) => p.userId !== current.userId)!.userId;
-            finalizeChessGame(room, winnerUserId);
-            nsp.to(code).emit("game:finished", { winnerUserId, reason: "TIMEOUT", state: room.state, clockMs: room.clockMs });
-            return;
+            if (room.clockMs[current.userId] <= 0) {
+              room.status = "FINISHED";
+              const winnerUserId = room.players.find((p) => p.userId !== current.userId)!.userId;
+              finalizeChessGame(room, winnerUserId);
+              nsp.to(code).emit("game:finished", { winnerUserId, reason: "TIMEOUT", state: room.state, clockMs: room.clockMs });
+              return;
+            }
           }
 
           const result = applyChessMove(room.state, from, to, promotion || "Q");

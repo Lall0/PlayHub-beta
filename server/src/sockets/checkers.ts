@@ -24,6 +24,7 @@ interface CheckersRoom {
   turnStartedAt: number;
   clockInitialMs: number;
   coinFlip?: { result: "CARA" | "COROA"; winnerUserId: string };
+  hasTimer?: boolean; // <-- ADICIONADO: Propriedade do timer
 }
 
 const rooms = new Map<string, CheckersRoom>();
@@ -51,6 +52,7 @@ function publicView(room: CheckersRoom) {
     clockMs: room.clockMs,
     turnStartedAt: room.turnStartedAt,
     coinFlip: room.coinFlip,
+    hasTimer: room.hasTimer, // <-- ADICIONADO: Envia a config de volta pro front
   };
 }
 
@@ -91,7 +93,9 @@ export function registerCheckersSockets(io: Server) {
 
   setInterval(() => {
     for (const room of rooms.values()) {
-      if (room.status !== "PLAYING" || !room.state) continue;
+      // <-- ADICIONADO: Se a sala não tem timer, pula a contagem
+      if (room.status !== "PLAYING" || !room.state || !room.hasTimer) continue;
+
       const current = room.state.players[room.state.currentTurn];
       const base = room.clockMs[current.userId] ?? room.clockInitialMs;
       const remaining = base - (Date.now() - room.turnStartedAt);
@@ -118,8 +122,11 @@ export function registerCheckersSockets(io: Server) {
     const username = await getUsernameCached(userId).catch(() => null);
     if (!username) return socket.disconnect();
 
-    socket.on("room:create", (_data: any, callback?: Function) => {
+    // <-- ADICIONADO: Troquei _data para data para podermos ler o hasTimer
+    socket.on("room:create", (data: any, callback?: Function) => {
       const code = genCode();
+      const hasTimer = data?.hasTimer !== undefined ? data.hasTimer : true; // Pega do front
+
       const room: CheckersRoom = {
         code,
         hostId: userId,
@@ -131,6 +138,7 @@ export function registerCheckersSockets(io: Server) {
         clockMs: {},
         turnStartedAt: 0,
         clockInitialMs: 10 * 60 * 1000,
+        hasTimer, // <-- Salva na sala
       };
       rooms.set(code, room);
       socket.join(code);
@@ -183,8 +191,6 @@ export function registerCheckersSockets(io: Server) {
       ok(callback, { waiting: false });
 
       setTimeout(async () => {
-        // Quem ganhou a moeda joga com DARK e começa (currentTurn = 0 sempre é o primeiro
-        // jogador da lista, então colocamos o vencedor nessa posição)
         const orderedPlayers = winnerUserId === room.players[0].userId ? room.players : [room.players[1], room.players[0]];
         const colors: PieceColor[] = ["DARK", "LIGHT"];
         orderedPlayers.forEach((p, i) => (p.color = colors[i]));
@@ -233,15 +239,18 @@ export function registerCheckersSockets(io: Server) {
       if (current.userId !== userId) return socket.emit("error:message", "Não é o seu turno");
 
       try {
-        if (!room.clockMs[current.userId]) room.clockMs[current.userId] = room.clockInitialMs;
-        const elapsed = Date.now() - room.turnStartedAt;
-        room.clockMs[current.userId] = Math.max(0, room.clockMs[current.userId] - elapsed);
-        if (room.clockMs[current.userId] <= 0) {
-          room.status = "FINISHED";
-          const winnerUserId = room.players.find((p) => p.userId !== current.userId)!.userId;
-          finalizeCheckersGame(room, winnerUserId);
-          nsp.to(code).emit("game:finished", { winnerUserId, reason: "TIMEOUT", state: room.state, clockMs: room.clockMs });
-          return;
+        // <-- ADICIONADO: Lógica de desconto de tempo condicionada ao hasTimer
+        if (room.hasTimer) {
+          if (!room.clockMs[current.userId]) room.clockMs[current.userId] = room.clockInitialMs;
+          const elapsed = Date.now() - room.turnStartedAt;
+          room.clockMs[current.userId] = Math.max(0, room.clockMs[current.userId] - elapsed);
+          if (room.clockMs[current.userId] <= 0) {
+            room.status = "FINISHED";
+            const winnerUserId = room.players.find((p) => p.userId !== current.userId)!.userId;
+            finalizeCheckersGame(room, winnerUserId);
+            nsp.to(code).emit("game:finished", { winnerUserId, reason: "TIMEOUT", state: room.state, clockMs: room.clockMs });
+            return;
+          }
         }
 
         const result = applyCheckersMove(room.state, pieceId, { row, col });
@@ -266,7 +275,12 @@ export function registerCheckersSockets(io: Server) {
       const room = rooms.get(code);
       if (!room || room.status !== "PLAYING" || !room.state) return fail(callback, "Não é possível pausar agora");
       const current = room.state.players[room.state.currentTurn];
-      room.clockMs[current.userId] = Math.max(0, (room.clockMs[current.userId] ?? room.clockInitialMs) - (Date.now() - room.turnStartedAt));
+
+      // <-- ADICIONADO: Só congela/desconta o tempo se tiver timer
+      if (room.hasTimer) {
+        room.clockMs[current.userId] = Math.max(0, (room.clockMs[current.userId] ?? room.clockInitialMs) - (Date.now() - room.turnStartedAt));
+      }
+
       room.status = "PAUSED";
       nsp.to(code).emit("game:paused", publicView(room));
       ok(callback);
